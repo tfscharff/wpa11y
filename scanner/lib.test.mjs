@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-	MAX_ISSUES, toIssues, attachText, isChallenge, isSiteUrl, normalizeUrl, selectPages,
+	MAX_ISSUES, toIssues, attachText, isChallenge, isSiteUrl, normalizeUrl, selectPages, cacheBust,
 	resultPayload, failurePayload, makeClient, runScan,
 } from './lib.mjs';
 
@@ -153,4 +153,12 @@ test('attachText: adds each element\'s visible text, clipped and whitespace-coll
 	assert.deepEqual(out.map(i => i.text), ['', 'Hi there', 'x'.repeat(200)]);
 	assert.equal(out[0].code, 'image-alt');
 	assert.equal(attachText(issues, [])[1].text, '');
+});
+
+test('cacheBust: adds a wpa11y query so Cloudflare and WP Engine serve a fresh copy', () => {
+	assert.equal(cacheBust(`${SITE}/about/`, 1700000000000), `${SITE}/about/?wpa11y=1700000000000`);
+	assert.equal(cacheBust(`${SITE}/about/?p=2#top`, 5), `${SITE}/about/?p=2&wpa11y=5#top`);
+	// Not utm_*: WP Engine leaves utm_ parameters out of its cache key.
+	assert.ok(!cacheBust(`${SITE}/`, 1).includes('utm_'));
+	assert.equal(cacheBust('not a url', 1), 'not a url');
 });

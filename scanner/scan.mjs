@@ -4,13 +4,13 @@
 //   node scan.mjs --print <url>   scan one URL and print its issues; no WordPress
 import puppeteer from 'puppeteer';
 import { AxePuppeteer } from '@axe-core/puppeteer';
-import { TAGS, EXCLUDE, attachText, isChallenge, isSiteUrl, makeClient, runScan, toIssues } from './lib.mjs';
+import { TAGS, EXCLUDE, attachText, cacheBust, isChallenge, isSiteUrl, makeClient, runScan, toIssues } from './lib.mjs';
 
 async function scan(browser, url) {
 	const page = await browser.newPage();
 	try {
 		await page.setViewport({ width: 1280, height: 1024 });
-		const res = await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+		const res = await page.goto(cacheBust(url), { waitUntil: 'networkidle2', timeout: 60000 });
 		const status = res ? res.status() : 0;
 		if (isChallenge({ status, title: await page.title(), html: await page.content() })) {
 			throw new Error(`Cloudflare challenge page (HTTP ${status})`);

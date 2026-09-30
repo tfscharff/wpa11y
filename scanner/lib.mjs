@@ -65,6 +65,20 @@ export function isSiteUrl(url, site) {
 	}
 }
 
+// The URL actually loaded for a scan. Cloudflare and WP Engine cache pages and page saves don't
+// purge them, so without this a rescan right after a fix can check the old copy. Each distinct
+// query is a cache miss. Not utm_*: WP Engine leaves those out of its cache key. Results are still
+// stored under the page's real URL.
+export function cacheBust(url, now = Date.now()) {
+	try {
+		const u = new URL(url);
+		u.searchParams.set('wpa11y', String(now));
+		return u.toString();
+	} catch {
+		return url;
+	}
+}
+
 // Same rules as the plugin's wpa11y_normalize_url().
 export function normalizeUrl(url) {
 	try {
