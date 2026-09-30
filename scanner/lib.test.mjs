@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-	MAX_ISSUES, toIssues, isChallenge, isSiteUrl, normalizeUrl, selectPages,
+	MAX_ISSUES, toIssues, attachText, isChallenge, isSiteUrl, normalizeUrl, selectPages,
 	resultPayload, failurePayload, makeClient, runScan,
 } from './lib.mjs';
 
@@ -32,7 +32,7 @@ test('toIssues: violations are errors, incomplete are warnings, passes ignored',
 	]);
 	assert.deepEqual(issues[0], {
 		type: 'error', code: 'image-alt', message: 'Images must have alternative text',
-		selector: '#main > img', context: '<img src="a.png">',
+		selector: '#main > img', context: '<img src="a.png">', text: '',
 		help_url: 'https://dequeuniversity.com/rules/axe/4.11/image-alt',
 	});
 });
@@ -145,4 +145,12 @@ test('toIssues: never splits an emoji at the clip boundary', () => {
 	assert.equal(ctx, 'a'.repeat(1999) + '😀');
 	assert.doesNotThrow(() => JSON.parse(JSON.stringify(ctx)));
 	assert.equal(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(ctx), false);
+});
+
+test('attachText: adds each element\'s visible text, clipped and whitespace-collapsed', () => {
+	const issues = toIssues(axe);
+	const out = attachText(issues, ['', '  Hi\n  there ', 'x'.repeat(250) + '😀']);
+	assert.deepEqual(out.map(i => i.text), ['', 'Hi there', 'x'.repeat(200)]);
+	assert.equal(out[0].code, 'image-alt');
+	assert.equal(attachText(issues, [])[1].text, '');
 });

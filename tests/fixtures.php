@@ -9,6 +9,7 @@ function wt_issue( $type, $code, $selector, $extra = array() ) {
 		'selector' => $selector,
 		'context'  => '<p>' . $code . '</p>',
 		'help_url' => 'https://dequeuniversity.com/rules/axe/4.11/' . $code,
+		'text'     => '',
 	), $extra );
 }
 

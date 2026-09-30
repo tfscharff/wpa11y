@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           1.1.0
+ * Version:           1.2.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '1.1.0' );
+define( 'WPA11Y_VERSION', '1.2.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -144,6 +144,7 @@ function wpa11y_clean_result( $body, $permalink ) {
 			'selector' => wpa11y_clip( $i['selector'] ?? '', 1000 ),
 			'context'  => wpa11y_clip( $i['context'] ?? '', 2000 ),
 			'help_url' => preg_match( '#^https://#', $help ) ? $help : '',
+			'text'     => wpa11y_clip( $i['text'] ?? '', 300 ),
 		);
 	}
 	$out['issues'] = $issues;
@@ -662,13 +663,17 @@ function wpa11y_status_html( $state ) {
 	return implode( ' ', $parts );
 }
 
-function wpa11y_render_instance( $section, $i ) {
+function wpa11y_render_instance( $section, $i, $edit_url = '' ) {
 	$key = wpa11y_issue_key( $i['code'], $i['selector'] );
 	$fid = 'wpa11y-f-' . substr( $key, 0, 12 );
 	$h   = '<li class="wpa11y-issue" data-key="' . esc_attr( $key ) . '">';
 	$h  .= '<p><span class="wpa11y-label">' . esc_html__( 'Element:', 'wpa11y' ) . '</span> <code>' . esc_html( $i['selector'] ) . '</code></p>';
 	if ( '' !== $i['context'] ) {
 		$h .= '<pre class="wpa11y-context"><code>' . esc_html( $i['context'] ) . '</code></pre>';
+	}
+	if ( '' !== $edit_url && 'dismissed' !== $section ) {
+		$h .= '<p><a class="button wpa11y-show-in-editor" href="' . esc_url( add_query_arg( array( 'wpa11y_find' => $key ), $edit_url ) ) . '">' . esc_html__( 'Show in editor', 'wpa11y' )
+			. '<span class="screen-reader-text">' . esc_html( ': ' . $i['code'] . ', ' . $i['selector'] ) . '</span></a></p>';
 	}
 	if ( 'warnings' === $section ) {
 		$h .= '<button type="button" class="button wpa11y-dismiss-open" aria-expanded="false" aria-controls="' . esc_attr( $fid ) . '">' . esc_html__( 'Dismiss…', 'wpa11y' ) . '</button>';
@@ -690,7 +695,7 @@ function wpa11y_render_instance( $section, $i ) {
 	return $h . '</li>';
 }
 
-function wpa11y_render_section( $section, $label, $intro, $issues, $empty ) {
+function wpa11y_render_section( $section, $label, $intro, $issues, $empty, $edit_url = '' ) {
 	$h = '<h2 id="wpa11y-h-' . $section . '" tabindex="-1">' . esc_html( $label ) . ' <span class="wpa11y-count">(' . count( $issues ) . ')</span></h2>';
 	if ( ! $issues ) { return $h . '<p>' . esc_html( $empty ) . '</p>'; }
 	if ( '' !== $intro ) { $h .= '<p class="description">' . esc_html( $intro ) . '</p>'; }
@@ -702,7 +707,7 @@ function wpa11y_render_section( $section, $label, $intro, $issues, $empty ) {
 			$h .= '<p><a href="' . esc_url( $first['help_url'] ) . '">' . esc_html( sprintf( __( 'How to fix %s (Deque University)', 'wpa11y' ), $code ) ) . '</a></p>';
 		}
 		$h .= '<ol class="wpa11y-instances">';
-		foreach ( $list as $i ) { $h .= wpa11y_render_instance( $section, $i ); }
+		foreach ( $list as $i ) { $h .= wpa11y_render_instance( $section, $i, $edit_url ); }
 		$h .= '</ol></details>';
 	}
 	return $h;
@@ -715,18 +720,63 @@ function wpa11y_render_detail( $post_id ) {
 	$split  = wpa11y_split( $result ? $result['issues'] : array(), wpa11y_active_rows( wpa11y_rows(), $post_id ) );
 	$busy   = 'pending' === $state['rescan'];
 
-	$h  = '<p class="wpa11y-links"><a href="' . esc_url( get_permalink( $post ) ) . '">' . esc_html__( 'View page', 'wpa11y' ) . '</a> | <a href="' . esc_url( get_edit_post_link( $post_id, 'raw' ) ) . '">' . esc_html__( 'Edit page', 'wpa11y' ) . '</a></p>';
+	// Null when this user can't edit the page: then no Edit or Show in editor links.
+	$edit = (string) get_edit_post_link( $post_id, 'raw' );
+
+	$h  = '<p class="wpa11y-links"><a href="' . esc_url( get_permalink( $post ) ) . '">' . esc_html__( 'View page', 'wpa11y' ) . '</a>'
+		. ( '' !== $edit ? ' | <a href="' . esc_url( $edit ) . '">' . esc_html__( 'Edit page', 'wpa11y' ) . '</a>' : '' ) . '</p>';
 	$h .= '<p class="wpa11y-scanned">' . wpa11y_status_html( $state ) . '</p>';
 	// aria-disabled, not disabled, so the button keeps focus while a scan runs.
 	$h .= '<p><button type="button" class="button" id="wpa11y-rescan"' . ( $busy ? ' aria-disabled="true"' : '' ) . '>'
 		. ( $busy ? esc_html__( 'Scanning…', 'wpa11y' ) : esc_html__( 'Rescan this page', 'wpa11y' ) ) . '</button></p>';
 	if ( ! $result ) { return $h; }
 
-	$h .= wpa11y_render_section( 'errors', __( 'Errors', 'wpa11y' ), __( 'Definite failures. Fix them in the page editor; they clear on the next scan. Errors cannot be dismissed.', 'wpa11y' ), $split['errors'], __( 'No errors found.', 'wpa11y' ) );
-	$h .= wpa11y_render_section( 'warnings', __( 'Warnings needing review', 'wpa11y' ), __( 'The checker could not decide these. Look at each one; if it is fine, dismiss it with a note.', 'wpa11y' ), $split['warnings'], __( 'No warnings need review.', 'wpa11y' ) );
+	$h .= wpa11y_render_section( 'errors', __( 'Errors', 'wpa11y' ), __( 'Definite failures. Fix them in the page editor; they clear on the next scan. Errors cannot be dismissed.', 'wpa11y' ), $split['errors'], __( 'No errors found.', 'wpa11y' ), $edit );
+	$h .= wpa11y_render_section( 'warnings', __( 'Warnings needing review', 'wpa11y' ), __( 'The checker could not decide these. Look at each one; if it is fine, dismiss it with a note.', 'wpa11y' ), $split['warnings'], __( 'No warnings need review.', 'wpa11y' ), $edit );
 	$h .= wpa11y_render_section( 'dismissed', __( 'Dismissed', 'wpa11y' ), '', $split['dismissed'], __( 'Nothing has been dismissed.', 'wpa11y' ) );
 	return $h;
 }
+
+// What the editor script needs to find one issue's block; found:false when the key isn't in the latest scan.
+function wpa11y_find_payload( $post_id, $key ) {
+	$result = wpa11y_get_result( $post_id );
+	$issue  = wpa11y_find_issue( $result ? $result['issues'] : array(), (string) $key );
+	if ( ! $issue ) { return array( 'found' => false ); }
+	return array(
+		'found'    => true,
+		'code'     => $issue['code'],
+		'message'  => $issue['message'],
+		'selector' => $issue['selector'],
+		'context'  => $issue['context'],
+		'text'     => (string) ( $issue['text'] ?? '' ),
+	);
+}
+
+// Config for assets/editor.js. Keys are md5 hex; anything else finds nothing.
+function wpa11y_editor_config( $post_id, $key ) {
+	$key = preg_match( '/^[a-f0-9]{32}$/', (string) $key ) ? $key : '';
+	return array(
+		'issue'   => wpa11y_find_payload( $post_id, $key ),
+		'strings' => array(
+			/* translators: %s: the accessibility problem, e.g. "Images must have alternative text". */
+			'found'    => __( 'Accessibility: the selected block has this problem: %s. To fix it in HTML, open the block toolbar’s Options menu (⋮) and choose Edit as HTML.', 'wpa11y' ),
+			/* translators: %s: the accessibility problem. */
+			'notFound' => __( 'Accessibility: could not find this problem in the page content (%s). It may come from the theme, a menu, a widget or a shortcode rather than this page’s blocks.', 'wpa11y' ),
+			'stale'    => __( 'Accessibility: that issue is no longer in the latest scan. Rescan the page to refresh the results.', 'wpa11y' ),
+		),
+	);
+}
+
+// Only on the edit screen opened by a "Show in editor" link.
+add_action( 'enqueue_block_editor_assets', function () {
+	// phpcs:disable WordPress.Security.NonceVerification -- read-only lookup of the user's own scan result.
+	$key     = isset( $_GET['wpa11y_find'] ) ? sanitize_key( wp_unslash( $_GET['wpa11y_find'] ) ) : '';
+	$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
+	// phpcs:enable
+	if ( '' === $key || ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) { return; }
+	wp_enqueue_script( 'wpa11y-editor', plugins_url( 'assets/editor.js', __FILE__ ), array( 'wp-blocks', 'wp-data', 'wp-dom-ready', 'wp-notices' ), WPA11Y_VERSION, true );
+	wp_add_inline_script( 'wpa11y-editor', 'window.WPA11Y_FIND=' . wp_json_encode( wpa11y_editor_config( $post_id, $key ) ) . ';', 'before' );
+} );
 
 function wpa11y_status_payload( $post_id ) {
 	$state = wpa11y_detail_state( $post_id );

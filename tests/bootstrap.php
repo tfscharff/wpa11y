@@ -145,7 +145,7 @@ function get_post( $post ) {
 }
 function get_permalink( $post ) { $p = get_post( $post ); return $p ? WT_SITE . '/' . $p->post_name . '/' : false; }
 function get_the_title( $post ) { $p = get_post( $post ); return $p ? $p->post_title : ''; }
-function get_edit_post_link( $id, $context = 'display' ) { return WT_SITE . '/wp-admin/post.php?post=' . (int) $id . '&action=edit'; }
+function get_edit_post_link( $id, $context = 'display' ) { if ( ! empty( $GLOBALS['wt_no_edit'] ) ) { return null; } return WT_SITE . '/wp-admin/post.php?post=' . (int) $id . '&action=edit'; }
 function get_post_types( $args = array(), $output = 'names' ) { return array( 'post' => 'post', 'page' => 'page', 'attachment' => 'attachment' ); }
 function is_post_type_viewable( $t ) { return in_array( $t, array( 'post', 'page', 'attachment' ), true ); }
 function get_post_type_object( $t ) { return (object) array( 'labels' => (object) array( 'singular_name' => ucfirst( $t ) ) ); }

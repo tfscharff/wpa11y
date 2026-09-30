@@ -4,7 +4,7 @@
 //   node scan.mjs --print <url>   scan one URL and print its issues; no WordPress
 import puppeteer from 'puppeteer';
 import { AxePuppeteer } from '@axe-core/puppeteer';
-import { TAGS, EXCLUDE, isChallenge, isSiteUrl, makeClient, runScan, toIssues } from './lib.mjs';
+import { TAGS, EXCLUDE, attachText, isChallenge, isSiteUrl, makeClient, runScan, toIssues } from './lib.mjs';
 
 async function scan(browser, url) {
 	const page = await browser.newPage();
@@ -18,7 +18,12 @@ async function scan(browser, url) {
 		if (status >= 400) throw new Error(`HTTP ${status}`);
 		let axe = new AxePuppeteer(page).withTags(TAGS);
 		for (const selector of EXCLUDE) axe = axe.exclude(selector);
-		return toIssues(await axe.analyze());
+		const issues = toIssues(await axe.analyze());
+		// Elements inside iframes or shadow roots have compound selectors; they just get no text.
+		const texts = await page.evaluate(selectors => selectors.map(s => {
+			try { const el = document.querySelector(s); return el ? el.textContent.slice(0, 1000) : ''; } catch { return ''; }
+		}), issues.map(i => i.selector));
+		return attachText(issues, texts);
 	} finally {
 		await page.close();
 	}

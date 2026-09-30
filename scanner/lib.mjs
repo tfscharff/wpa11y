@@ -7,7 +7,7 @@ export const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 export const EXCLUDE = ['.screen-reader-text', '.sr-only', 'body > iframe[style*="visibility: hidden"]'];
 
 export const MAX_ISSUES = 1000;
-const LIMITS = { code: 100, message: 500, selector: 1000, context: 2000, help_url: 500, error: 500 };
+const LIMITS = { code: 100, message: 500, selector: 1000, context: 2000, help_url: 500, error: 500, text: 200 };
 
 // Counts code points, so an emoji is never cut into a lone surrogate (PHP's json_decode rejects those).
 const clip = (value, max) => Array.from(String(value ?? '')).slice(0, max).join('');
@@ -30,6 +30,7 @@ export function toIssues(axeResults) {
 					selector: clip(targetToSelector(node.target), LIMITS.selector),
 					context: clip(node.html, LIMITS.context),
 					help_url: clip(rule.helpUrl, LIMITS.help_url),
+					text: '',
 				});
 			}
 		}
@@ -37,6 +38,15 @@ export function toIssues(axeResults) {
 	add('error', axeResults.violations);
 	add('warning', axeResults.incomplete);
 	return issues;
+}
+
+// axe keeps only the opening tag of a large element, so the element's own text
+// (read from the page, in issue order) is what lets the plugin find its block.
+export function attachText(issues, texts) {
+	return issues.map((issue, n) => ({
+		...issue,
+		text: clip(String(texts[n] ?? '').replace(/\s+/g, ' ').trim(), LIMITS.text),
+	}));
 }
 
 // Every page carries Cloudflare's JS Detections script (challenge-platform/…/jsd),

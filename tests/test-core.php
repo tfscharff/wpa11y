@@ -73,3 +73,8 @@ check( 'result: missing is null', wpa11y_get_result( 99 ), null );
 check( 'time: ISO', wpa11y_format_time( '2026-09-30T10:04:00Z' ), 'Sep 30, 2026 10:04 am' );
 check( 'time: MySQL UTC', wpa11y_format_time( '2026-09-30 10:04:00' ), 'Sep 30, 2026 10:04 am' );
 check( 'time: empty', wpa11y_format_time( '' ), '' );
+$t = wpa11y_clean_result( array_merge( $good, array( 'issues' => array( wt_issue( 'error', 'list', 'ul', array( 'text' => str_repeat( 'é', 400 ) ) ) ) ) ), $permalink );
+check( 'clean: element text kept, clipped to 300', $t['issues'][0]['text'], str_repeat( 'é', 300 ) );
+$old = wt_issue( 'error', 'list', 'ul' );
+unset( $old['text'] );
+check( 'clean: results without text (older scanner) get empty text', wpa11y_clean_result( array_merge( $good, array( 'issues' => array( $old ) ) ), $permalink )['issues'][0]['text'], '' );
