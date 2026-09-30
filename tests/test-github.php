@@ -48,3 +48,10 @@ check( 'settings page: secret field labelled', strpos( $html, '<label for="wpa11
 check( 'settings page: error listed, no success notice', array( strpos( $html, 'Repository must look like' ) !== false, strpos( $html, 'Settings saved.' ) ), array( true, false ) );
 check( 'settings page: token never echoed', strpos( wpa11y_render_settings( '', array(), '' ), 'name="token" value' ), false );
 check( 'settings page: token field refuses password autofill', strpos( wpa11y_render_settings( '', array(), '' ), 'name="token" autocomplete="new-password"' ) !== false, true );
+
+// The note beside "Replace secret" is about what replacing would do, not a current problem.
+wt_reset();
+update_option( 'wpa11y_secret_hash', str_repeat( 'a', 64 ) );
+$html = wpa11y_render_settings( '', array(), '' );
+check( 'settings page: replace note is conditional', strpos( $html, 'If you replace it, the daily scan stops until you paste the new secret into GitHub as WPA11Y_SECRET.' ) !== false, true );
+check( 'settings page: no alarming status-like note', strpos( $html, 'fails until GitHub has the new secret' ), false );

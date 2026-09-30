@@ -49,6 +49,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **1.2.2** (2026-09-30) — Settings: the note beside **Replace secret** now says what replacing would do, instead of reading like the scan is currently failing.
 - **1.2.1** (2026-09-30) — The scanner loads each page with a `?wpa11y=<time>` query so Cloudflare and WP Engine caches can't hand it an old copy; a rescan right after a fix now sees the fix.
 - **1.2.0** (2026-09-30) — Show in editor: each error and warning opens the block editor with the block that has the problem selected. The scanner now records each element's text so the block can be found.
 - **1.1.0** (2026-09-30) — Overview error and warning counts link straight to that section of the page's detail.

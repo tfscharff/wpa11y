@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           1.2.1
+ * Version:           1.2.2
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '1.2.1' );
+define( 'WPA11Y_VERSION', '1.2.2' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -565,7 +565,7 @@ function wpa11y_render_settings( $new_secret, $errors, $msg ) {
 	$h .= '<p>' . esc_html__( 'Also add a GitHub secret named WPA11Y_SITE with this value:', 'wpa11y' ) . ' <code>' . esc_html( home_url() ) . '</code></p>';
 	$h .= '<form method="post" action="' . $post_url . '"><input type="hidden" name="action" value="wpa11y_secret">' . wp_nonce_field( 'wpa11y_secret', '_wpnonce', true, false )
 		. '<button type="submit" class="button">' . ( $has_hash ? esc_html__( 'Replace secret', 'wpa11y' ) : esc_html__( 'Generate secret', 'wpa11y' ) ) . '</button>'
-		. ( $has_hash ? ' <span class="description">' . esc_html__( 'The daily scan fails until GitHub has the new secret.', 'wpa11y' ) . '</span>' : '' ) . '</form>';
+		. ( $has_hash ? ' <span class="description">' . esc_html__( 'If you replace it, the daily scan stops until you paste the new secret into GitHub as WPA11Y_SECRET.', 'wpa11y' ) . '</span>' : '' ) . '</form>';
 
 	$h .= '<h2>' . esc_html__( 'Rescan (GitHub)', 'wpa11y' ) . '</h2>';
 	$h .= '<p>' . esc_html__( 'Rescan starts the scan workflow on GitHub. It needs a fine-grained personal access token that can only access this repository, with the permission "Actions: Read and write".', 'wpa11y' ) . '</p>';
