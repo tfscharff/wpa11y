@@ -138,3 +138,11 @@ test('runScan: single URL scans one page and skips scan-complete', async () => {
 	assert.deepEqual(summary, { scanned: 1, failed: 0 });
 	assert.equal(client.completed, null);
 });
+
+test('toIssues: never splits an emoji at the clip boundary', () => {
+	const html = 'a'.repeat(1999) + '😀tail';
+	const ctx = toIssues({ violations: [{ id: 'x', help: 'h', helpUrl: '', nodes: [{ target: ['a'], html }] }] })[0].context;
+	assert.equal(ctx, 'a'.repeat(1999) + '😀');
+	assert.doesNotThrow(() => JSON.parse(JSON.stringify(ctx)));
+	assert.equal(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(ctx), false);
+});

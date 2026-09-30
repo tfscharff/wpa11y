@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           0.9.0
+ * Version:           0.10.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '0.9.0' );
+define( 'WPA11Y_VERSION', '0.10.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -579,7 +579,7 @@ function wpa11y_render_settings( $new_secret, $errors, $msg ) {
 		$h .= '<tr><th scope="row"><label for="wpa11y-' . $name . '">' . esc_html( $f[0] ) . '</label></th><td><input type="text" class="regular-text" id="wpa11y-' . $name . '" name="' . $name . '" value="' . esc_attr( $f[1] ) . '"></td></tr>';
 	}
 	$h .= '<tr><th scope="row"><label for="wpa11y-token">' . esc_html__( 'GitHub token', 'wpa11y' ) . '</label></th><td>'
-		. '<input type="password" class="regular-text" id="wpa11y-token" name="token" autocomplete="off" aria-describedby="wpa11y-token-help">'
+		. '<input type="password" class="regular-text" id="wpa11y-token" name="token" autocomplete="new-password" aria-describedby="wpa11y-token-help">'
 		. '<p class="description" id="wpa11y-token-help">' . ( $has_token ? esc_html__( 'A token is saved. Leave blank to keep it.', 'wpa11y' ) : esc_html__( 'No token saved; Rescan is off.', 'wpa11y' ) ) . '</p>';
 	if ( $has_token ) {
 		$h .= '<p><label><input type="checkbox" name="remove_token" value="1"> ' . esc_html__( 'Remove the saved token', 'wpa11y' ) . '</label></p>';
@@ -734,6 +734,7 @@ function wpa11y_status_payload( $post_id ) {
 	return array(
 		'html'    => wpa11y_render_detail( $post_id ),
 		'pending' => 'pending' === $state['rescan'],
+		'rescan'  => $state['rescan'],
 		'counts'  => $c,
 		'summary' => wpa11y_summary( $state['result'], $c ),
 	);
@@ -756,7 +757,8 @@ function wpa11y_rest_dismiss( $request ) {
 	if ( 'warning' !== $issue['type'] ) {
 		return new WP_Error( 'wpa11y_error_not_dismissable', __( 'Errors cannot be dismissed. Fix them in the page editor; they clear on the next scan.', 'wpa11y' ), array( 'status' => 400 ) );
 	}
-	$note = wpa11y_clip( sanitize_textarea_field( (string) $request->get_param( 'note' ) ), 1000 );
+	// Kept as typed (notes often name tags like <main>); every display escapes it.
+	$note = wpa11y_clip( trim( wp_check_invalid_utf8( (string) $request->get_param( 'note' ) ) ), 1000 );
 	wpa11y_add_dismissal( $post->ID, $issue['code'], $issue['selector'], $note, get_current_user_id() );
 	return wpa11y_status_payload( $post->ID );
 }
@@ -809,6 +811,7 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 			'undone'    => __( 'Dismissal undone; the warning is back under review.', 'wpa11y' ),
 			'scanning'  => __( 'Scanning. Results usually arrive in 1 to 2 minutes.', 'wpa11y' ),
 			'scanDone'  => __( 'Scan finished.', 'wpa11y' ),
+			'timedOut'  => __( 'The rescan has not reported back after 10 minutes. Check the scan runs on GitHub; the link is next to the Rescan button.', 'wpa11y' ),
 			'failed'    => __( 'Request failed', 'wpa11y' ),
 		),
 	) ) . ';', 'before' );

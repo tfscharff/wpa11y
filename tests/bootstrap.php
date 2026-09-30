@@ -187,3 +187,4 @@ function wp_remote_retrieve_response_code( $r ) { return is_wp_error( $r ) ? '' 
 function wp_remote_retrieve_body( $r ) { return is_wp_error( $r ) ? '' : $r['body']; }
 
 wt_reset();
+function wp_check_invalid_utf8( $s ) { return 1 === preg_match( '//u', (string) $s ) ? (string) $s : ''; }

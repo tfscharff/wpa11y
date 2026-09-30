@@ -9,7 +9,8 @@ export const EXCLUDE = ['.screen-reader-text', '.sr-only', 'body > iframe[style*
 export const MAX_ISSUES = 1000;
 const LIMITS = { code: 100, message: 500, selector: 1000, context: 2000, help_url: 500, error: 500 };
 
-const clip = (value, max) => String(value ?? '').slice(0, max);
+// Counts code points, so an emoji is never cut into a lone surrogate (PHP's json_decode rejects those).
+const clip = (value, max) => Array.from(String(value ?? '')).slice(0, max).join('');
 
 // axe targets are strings, or nested arrays for iframes and shadow roots.
 const targetToSelector = target =>

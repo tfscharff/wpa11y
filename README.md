@@ -46,6 +46,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **0.10.0** (2026-09-30) — Work in progress, do not install: review fixes (timeout announcement, focus restore on refresh, emoji-safe clipping, token autofill, notes kept as typed).
 - **0.9.0** (2026-09-30) — Work in progress, do not install: scanner entry point and daily scan workflow.
 - **0.8.0** (2026-09-30) — Work in progress, do not install: scanner logic with axe result mapping and run loop.
 - **0.7.0** (2026-09-30) — Work in progress, do not install: dismissal log with undo and restore.

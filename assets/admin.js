@@ -59,7 +59,7 @@
 			if (d) { d.open = true; }
 		}
 		if (focusSelector) {
-			var el = region.querySelector(focusSelector);
+			var el = region.querySelector(focusSelector) || region.querySelector('#wpa11y-h-errors') || region.querySelector('#wpa11y-rescan');
 			if (el) { el.focus(); }
 		}
 		setPolling(data.pending);
@@ -74,6 +74,21 @@
 		}
 	}
 
+	// A selector for whatever has focus inside the region, so a background
+	// re-render can put focus back instead of dropping it to <body>.
+	function focusTarget() {
+		var el = document.activeElement;
+		if (!el || !region.contains(el)) { return null; }
+		if (el.id) { return '#' + el.id; }
+		var group = el.closest('details[id]');
+		var issue = el.closest('.wpa11y-issue');
+		if (issue && el.classList.contains('wpa11y-undo')) {
+			return '.wpa11y-issue[data-key="' + issue.getAttribute('data-key') + '"] .wpa11y-undo';
+		}
+		if (group) { return '#' + group.id + ' > summary'; }
+		return '#wpa11y-h-errors';
+	}
+
 	function poll() {
 		api('GET', 'status?post=' + encodeURIComponent(postId)).then(function (data) {
 			if (data.pending) { return; }
@@ -81,10 +96,9 @@
 			if (formOpen()) {
 				deferred = data; // Don't wipe a note being typed; render when the form closes.
 			} else {
-				var onRescan = document.activeElement && document.activeElement.id === 'wpa11y-rescan';
-				render(data, onRescan ? '#wpa11y-rescan' : null);
+				render(data, focusTarget());
 			}
-			announce(cfg.strings.scanDone + ' ' + data.summary);
+			announce(data.rescan === 'timed_out' ? cfg.strings.timedOut : cfg.strings.scanDone + ' ' + data.summary);
 		}, function () { /* Keep polling; the next request may succeed. */ });
 	}
 

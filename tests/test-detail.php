@@ -19,7 +19,7 @@ check( 'detail: never scanned', strpos( wt_render_unscanned(), 'Not scanned yet.
 $key = wpa11y_issue_key( 'color-contrast', '#a' );
 $res = wpa11y_rest_dismiss( new WP_REST_Request( array( 'post' => 10, 'key' => $key, 'note' => '  <b>ok</b> by eye ' ) ) );
 check( 'dismiss: counts move', $res['counts'], array( 'errors' => 1, 'warnings' => 1, 'dismissed' => 1, 'state' => 'issues' ) );
-check( 'dismiss: note sanitized', wpa11y_rows()[0]['note'], 'ok by eye' );
+check( 'dismiss: note trimmed, kept as typed', wpa11y_rows()[0]['note'], '<b>ok</b> by eye' );
 check( 'dismiss: user recorded', wpa11y_rows()[0]['user_id'], '5' );
 check( 'dismiss: html shows who', strpos( $res['html'], 'Dismissed by Pat Editor' ) !== false, true );
 check( 'dismiss: summary', $res['summary'], '1 error, 1 warning needing review.' );
@@ -65,3 +65,13 @@ $GLOBALS['wt_routes'] = array();
 wpa11y_register_routes();
 check( 'routes: all seven registered', count( $GLOBALS['wt_routes'] ), 7 );
 check( 'routes: editor routes use editor permission', $GLOBALS['wt_routes']['wpa11y/v1/dismiss']['permission_callback'], 'wpa11y_editor_permission' );
+
+// Review fixes.
+wt_reset( array( 'posts' => array( array( 'ID' => 10 ) ) ) );
+wpa11y_save_result( 10, wt_result( array( wt_issue( 'warning', 'color-contrast', '#a' ) ), '2020-01-01T00:00:00Z' ) );
+update_post_meta( 10, WPA11Y_RESCAN_META, wpa11y_iso( time() - 1200 ) );
+$res = wpa11y_rest_status( new WP_REST_Request( array( 'post' => 10 ) ) );
+check( 'status: timed-out rescan is reported as such', array( $res['pending'], $res['rescan'] ), array( false, 'timed_out' ) );
+$res = wpa11y_rest_dismiss( new WP_REST_Request( array( 'post' => 10, 'key' => wpa11y_issue_key( 'color-contrast', '#a' ), 'note' => ' needs a <main> landmark ' ) ) );
+check( 'dismiss: note keeps tag names', wpa11y_rows()[0]['note'], 'needs a <main> landmark' );
+check( 'dismiss: note escaped on display', strpos( $res['html'], 'needs a &lt;main&gt; landmark' ) !== false, true );

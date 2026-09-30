@@ -47,3 +47,4 @@ check( 'settings page: shows new secret once', strpos( $html, 'value="abc123"' )
 check( 'settings page: secret field labelled', strpos( $html, '<label for="wpa11y-secret">' ) !== false, true );
 check( 'settings page: error listed, no success notice', array( strpos( $html, 'Repository must look like' ) !== false, strpos( $html, 'Settings saved.' ) ), array( true, false ) );
 check( 'settings page: token never echoed', strpos( wpa11y_render_settings( '', array(), '' ), 'name="token" value' ), false );
+check( 'settings page: token field refuses password autofill', strpos( wpa11y_render_settings( '', array(), '' ), 'name="token" autocomplete="new-password"' ) !== false, true );
