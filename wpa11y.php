@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '1.0.0' );
+define( 'WPA11Y_VERSION', '1.1.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -923,6 +923,15 @@ function wpa11y_scanned_label( $item ) {
 	return $when;
 }
 
+// A non-zero count links to that section of the page detail; the hidden text names the page for screen readers.
+function wpa11y_count_link( $item, $section ) {
+	$n = (int) $item[ $section ];
+	if ( 0 === $n ) { return '0'; }
+	$what = 'errors' === $section ? _n( 'error', 'errors', $n, 'wpa11y' ) : _n( 'warning', 'warnings', $n, 'wpa11y' );
+	return '<a href="' . esc_url( wpa11y_detail_url( $item['id'] ) . '#wpa11y-h-' . $section ) . '">' . $n
+		. '<span class="screen-reader-text">' . esc_html( sprintf( __( ' %1$s on %2$s', 'wpa11y' ), $what, $item['title'] ) ) . '</span></a>';
+}
+
 function wpa11y_render_overview( $items, $filter, $orderby, $order, $last_full ) {
 	if ( ! isset( wpa11y_filters()[ $filter ] ) ) { $filter = 'all'; }
 	$orderby = wpa11y_valid_orderby( $orderby );
@@ -970,8 +979,8 @@ function wpa11y_render_overview( $items, $filter, $orderby, $order, $last_full )
 		$unknown = 'unscanned' === $r['state'];
 		$h      .= '<tr><th scope="row"><strong><a href="' . esc_url( wpa11y_detail_url( $r['id'] ) ) . '">' . esc_html( $r['title'] ) . '</a></strong></th>';
 		$h      .= '<td>' . esc_html( $type ? $type->labels->singular_name : $r['type'] ) . '</td>';
-		$h      .= '<td>' . ( $unknown ? $none : (int) $r['errors'] ) . '</td>';
-		$h      .= '<td>' . ( $unknown ? $none : (int) $r['warnings'] ) . '</td>';
+		$h      .= '<td>' . ( $unknown ? $none : wpa11y_count_link( $r, 'errors' ) ) . '</td>';
+		$h      .= '<td>' . ( $unknown ? $none : wpa11y_count_link( $r, 'warnings' ) ) . '</td>';
 		$h      .= '<td>' . esc_html( wpa11y_scanned_label( $r ) ) . '</td></tr>';
 	}
 	return $h . '</tbody></table>';

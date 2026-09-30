@@ -40,3 +40,9 @@ check( 'label: failed', wpa11y_counts_label( array( 'errors' => 1, 'warnings' =>
 check( 'column: links to detail', wpa11y_column_html( 10 ), '<a href="' . WT_SITE . '/wp-admin/admin.php?page=wpa11y&amp;post=10">1 error · 0 warnings</a>' );
 wt_add_post( array( 'ID' => 11, 'post_status' => 'draft' ) );
 check( 'column: drafts are not scanned', wpa11y_column_html( 11 ), 'Not published' );
+
+// Counts link to the matching section of the page detail.
+$html = wpa11y_render_overview( $items, 'all', 'errors', 'desc', '' );
+check( 'overview: error count links to errors section', strpos( $html, '<td><a href="' . WT_SITE . '/wp-admin/admin.php?page=wpa11y&amp;post=2#wpa11y-h-errors">3<span class="screen-reader-text"> errors on alpha</span></a></td>' ) !== false, true );
+check( 'overview: warning count links to warnings section', strpos( $html, 'post=1#wpa11y-h-warnings">2<span class="screen-reader-text"> warnings on Beta</span></a>' ) !== false, true );
+check( 'overview: zero counts are plain text', strpos( $html, '<td>0</td>' ) !== false, true );

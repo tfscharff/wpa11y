@@ -46,6 +46,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **1.1.0** (2026-09-30) — Overview error and warning counts link straight to that section of the page's detail.
 - **1.0.0** (2026-09-30) — First complete release: daily axe scan on GitHub Actions, overview, page detail with rescan, dismissable warnings with a log, Pages column.
 - **0.10.0** (2026-09-30) — Work in progress, do not install: review fixes (timeout announcement, focus restore on refresh, emoji-safe clipping, token autofill, notes kept as typed).
 - **0.9.0** (2026-09-30) — Work in progress, do not install: scanner entry point and daily scan workflow.
