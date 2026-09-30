@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           0.6.0
+ * Version:           0.7.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '0.6.0' );
+define( 'WPA11Y_VERSION', '0.7.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -1007,4 +1007,123 @@ add_action( 'admin_init', function () {
 			if ( 'wpa11y' === $col ) { echo wpa11y_column_html( $post_id ); } // phpcs:ignore WordPress.Security.EscapeOutput
 		}, 10, 2 );
 	}
+} );
+
+/* ------------------------------------------------------------------ *
+ *  Dismissal log
+ * ------------------------------------------------------------------ */
+
+function wpa11y_log_filters() {
+	return array(
+		'all'    => __( 'All', 'wpa11y' ),
+		'active' => __( 'Active', 'wpa11y' ),
+		'gone'   => __( 'No longer present', 'wpa11y' ),
+		'undone' => __( 'Undone', 'wpa11y' ),
+	);
+}
+
+// "gone": still active, but the latest scan no longer has that warning (the element changed or the page is gone).
+function wpa11y_log_rows( $rows, $filter ) {
+	if ( ! isset( wpa11y_log_filters()[ $filter ] ) ) { $filter = 'all'; }
+	$issues = array();
+	$out    = array();
+	foreach ( $rows as $r ) {
+		$pid = (int) $r['post_id'];
+		if ( ! isset( $issues[ $pid ] ) ) {
+			$res            = wpa11y_get_result( $pid );
+			$issues[ $pid ] = $res ? $res['issues'] : array();
+		}
+		if ( ! empty( $r['undone_at'] ) ) {
+			$r['status'] = 'undone';
+		} else {
+			$i           = wpa11y_find_issue( $issues[ $pid ], wpa11y_issue_key( $r['code'], $r['selector'] ) );
+			$r['status'] = $i && 'warning' === $i['type'] ? 'active' : 'gone';
+		}
+		if ( 'all' === $filter || $r['status'] === $filter ) { $out[] = $r; }
+	}
+	return $out;
+}
+
+function wpa11y_log_action( $do, $id, $user_id ) {
+	if ( 'undo' === $do ) { return false !== wpa11y_undo_dismissal( $id, $user_id ); }
+	if ( 'restore' === $do ) { return false !== wpa11y_restore_dismissal( $id, $user_id ); }
+	return false;
+}
+
+function wpa11y_user_name( $user_id ) {
+	$u = get_userdata( (int) $user_id );
+	return $u ? $u->display_name : sprintf( __( 'user #%d', 'wpa11y' ), (int) $user_id );
+}
+
+function wpa11y_render_log( $rows, $filter, $msg ) {
+	if ( ! isset( wpa11y_log_filters()[ $filter ] ) ) { $filter = 'all'; }
+	$base     = admin_url( 'admin.php?page=wpa11y-log' );
+	$messages = array(
+		'log_undo'    => __( 'Dismissal undone. The warning is back under review.', 'wpa11y' ),
+		'log_restore' => __( 'Dismissal restored.', 'wpa11y' ),
+		'log_failed'  => __( 'That dismissal had already changed. Nothing was done.', 'wpa11y' ),
+	);
+
+	$h = '<h1>' . esc_html__( 'Dismissal log', 'wpa11y' ) . '</h1>';
+	if ( isset( $messages[ $msg ] ) ) {
+		$h .= '<div class="notice ' . ( 'log_failed' === $msg ? 'notice-error' : 'notice-success' ) . '"><p>' . esc_html( $messages[ $msg ] ) . '</p></div>';
+	}
+	$h    .= '<p>' . esc_html__( 'Every warning anyone has dismissed, with who, when and why. Nothing here is ever deleted.', 'wpa11y' ) . '</p>';
+	$links = array();
+	foreach ( wpa11y_log_filters() as $key => $label ) {
+		$links[] = '<li><a href="' . esc_url( add_query_arg( array( 'status' => $key ), $base ) ) . '"' . ( $key === $filter ? ' class="current" aria-current="page"' : '' ) . '>' . esc_html( $label ) . '</a>';
+	}
+	$h .= '<ul class="subsubsub">' . implode( ' |</li>', $links ) . '</li></ul>';
+	if ( ! $rows ) { return $h . '<p class="clear">' . esc_html__( 'No dismissals match.', 'wpa11y' ) . '</p>'; }
+
+	$h .= '<table class="wp-list-table widefat striped wpa11y-log"><caption class="screen-reader-text">' . esc_html__( 'Dismissals, newest first', 'wpa11y' ) . '</caption><thead><tr>';
+	foreach ( array( __( 'Dismissed', 'wpa11y' ), __( 'Page', 'wpa11y' ), __( 'Rule', 'wpa11y' ), __( 'Element', 'wpa11y' ), __( 'By', 'wpa11y' ), __( 'Note', 'wpa11y' ), __( 'Status', 'wpa11y' ), __( 'Action', 'wpa11y' ) ) as $label ) {
+		$h .= '<th scope="col">' . esc_html( $label ) . '</th>';
+	}
+	$h    .= '</tr></thead><tbody>';
+	$nonce = esc_attr( wp_create_nonce( 'wpa11y_log' ) );
+	foreach ( $rows as $r ) {
+		$post  = get_post( (int) $r['post_id'] );
+		$title = $post ? wpa11y_title( $post ) : sprintf( __( '(deleted page #%d)', 'wpa11y' ), (int) $r['post_id'] );
+		$page  = $post ? '<a href="' . esc_url( wpa11y_detail_url( (int) $r['post_id'] ) ) . '">' . esc_html( $title ) . '</a>' : esc_html( $title );
+		if ( 'undone' === $r['status'] ) {
+			$status = sprintf( __( 'Undone by %1$s on %2$s', 'wpa11y' ), wpa11y_user_name( $r['undone_by'] ), wpa11y_format_time( $r['undone_at'] ) );
+			$do     = 'restore';
+			$verb   = __( 'Restore', 'wpa11y' );
+		} else {
+			$status = wpa11y_log_filters()[ $r['status'] ];
+			$do     = 'undo';
+			$verb   = __( 'Undo', 'wpa11y' );
+		}
+		$form = '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">'
+			. '<input type="hidden" name="action" value="wpa11y_log">'
+			. '<input type="hidden" name="id" value="' . (int) $r['id'] . '">'
+			. '<input type="hidden" name="status" value="' . esc_attr( $filter ) . '">'
+			. '<input type="hidden" name="_wpnonce" value="' . $nonce . '">'
+			. '<button type="submit" class="button button-small" name="do" value="' . $do . '">' . esc_html( $verb )
+			. '<span class="screen-reader-text">' . esc_html( sprintf( __( ' dismissal of %1$s on %2$s', 'wpa11y' ), $r['code'], $title ) ) . '</span></button></form>';
+		$h .= '<tr><td>' . esc_html( wpa11y_format_time( $r['created_at'] ) ) . '</td><td>' . $page . '</td><td><code>' . esc_html( $r['code'] ) . '</code></td>'
+			. '<td><code>' . esc_html( $r['selector'] ) . '</code></td><td>' . esc_html( wpa11y_user_name( $r['user_id'] ) ) . '</td><td>' . esc_html( $r['note'] ) . '</td>'
+			. '<td>' . esc_html( $status ) . '</td><td>' . $form . '</td></tr>';
+	}
+	return $h . '</tbody></table>';
+}
+
+function wpa11y_page_log() {
+	if ( ! current_user_can( WPA11Y_CAP ) ) { return; }
+	// phpcs:disable WordPress.Security.NonceVerification -- read-only view parameters.
+	$filter = isset( $_GET['status'] ) ? sanitize_key( wp_unslash( $_GET['status'] ) ) : 'all';
+	$msg    = isset( $_GET['wpa11y_msg'] ) ? sanitize_key( wp_unslash( $_GET['wpa11y_msg'] ) ) : '';
+	// phpcs:enable
+	echo '<div class="wrap wpa11y">' . wpa11y_render_log( wpa11y_log_rows( wpa11y_rows(), $filter ), $filter, $msg ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput
+}
+
+add_action( 'admin_post_wpa11y_log', function () {
+	if ( ! current_user_can( WPA11Y_CAP ) ) { wp_die( esc_html__( 'Sorry, you are not allowed to do that.', 'wpa11y' ), 403 ); }
+	check_admin_referer( 'wpa11y_log' );
+	$do     = sanitize_key( wp_unslash( $_POST['do'] ?? '' ) );
+	$ok     = wpa11y_log_action( $do, absint( $_POST['id'] ?? 0 ), get_current_user_id() );
+	$status = sanitize_key( wp_unslash( $_POST['status'] ?? 'all' ) );
+	wp_safe_redirect( add_query_arg( array( 'page' => 'wpa11y-log', 'status' => $status, 'wpa11y_msg' => $ok ? 'log_' . $do : 'log_failed' ), admin_url( 'admin.php' ) ) );
+	exit;
 } );

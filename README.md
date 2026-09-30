@@ -46,6 +46,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **0.7.0** (2026-09-30) — Work in progress, do not install: dismissal log with undo and restore.
 - **0.6.0** (2026-09-30) — Work in progress, do not install: accessibility overview and list column.
 - **0.5.0** (2026-09-30) — Work in progress, do not install: page detail with dismiss, undo and rescan.
 - **0.4.0** (2026-09-30) — Work in progress, do not install: GitHub rescan dispatch and settings screen.
