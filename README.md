@@ -46,6 +46,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **0.2.0** (2026-09-30) — Work in progress, do not install: dismissals table and issue sorting.
 - **0.1.0** (2026-09-30) — Work in progress, do not install: plugin skeleton and result storage.
 
 ## License
