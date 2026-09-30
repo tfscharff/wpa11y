@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           0.5.0
+ * Version:           0.6.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '0.5.0' );
+define( 'WPA11Y_VERSION', '0.6.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -812,4 +812,199 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 			'failed'    => __( 'Request failed', 'wpa11y' ),
 		),
 	) ) . ';', 'before' );
+} );
+
+/* ------------------------------------------------------------------ *
+ *  Overview and list-table column
+ * ------------------------------------------------------------------ */
+
+function wpa11y_filters() {
+	return array(
+		'all'       => __( 'All', 'wpa11y' ),
+		'errors'    => __( 'Has errors', 'wpa11y' ),
+		'warnings'  => __( 'Has warnings', 'wpa11y' ),
+		'failed'    => __( 'Scan failed', 'wpa11y' ),
+		'unscanned' => __( 'Not scanned', 'wpa11y' ),
+	);
+}
+
+function wpa11y_valid_orderby( $orderby ) {
+	return in_array( $orderby, array( 'title', 'type', 'errors', 'warnings', 'scanned' ), true ) ? $orderby : 'errors';
+}
+
+function wpa11y_item_matches( $item, $filter ) {
+	switch ( $filter ) {
+		case 'errors':
+			return $item['errors'] > 0;
+		case 'warnings':
+			return $item['warnings'] > 0;
+		case 'failed':
+			return 'failed' === $item['state'];
+		case 'unscanned':
+			return 'unscanned' === $item['state'];
+	}
+	return true;
+}
+
+function wpa11y_overview_items() {
+	$by_post = array();
+	foreach ( wpa11y_active_rows( wpa11y_rows() ) as $r ) { $by_post[ (int) $r['post_id'] ][] = $r; }
+	$items = array();
+	foreach ( wpa11y_scannable_posts() as $post ) {
+		$result  = wpa11y_get_result( $post->ID );
+		$c       = wpa11y_counts( $result, $by_post[ (int) $post->ID ] ?? array() );
+		$items[] = array(
+			'id'         => (int) $post->ID,
+			'title'      => wpa11y_title( $post ),
+			'type'       => $post->post_type,
+			'errors'     => $c['errors'],
+			'warnings'   => $c['warnings'],
+			'state'      => $c['state'],
+			'scanned_at' => (string) ( $result['scanned_at'] ?? '' ),
+		);
+	}
+	return $items;
+}
+
+function wpa11y_filter_counts( $items ) {
+	$counts = array();
+	foreach ( array_keys( wpa11y_filters() ) as $key ) {
+		$counts[ $key ] = count( array_filter( $items, function ( $i ) use ( $key ) { return wpa11y_item_matches( $i, $key ); } ) );
+	}
+	return $counts;
+}
+
+function wpa11y_overview_rows( $items, $filter, $orderby, $order ) {
+	if ( ! isset( wpa11y_filters()[ $filter ] ) ) { $filter = 'all'; }
+	$orderby = wpa11y_valid_orderby( $orderby );
+	$dir     = 'asc' === $order ? 1 : -1;
+	$rows    = array_values( array_filter( $items, function ( $i ) use ( $filter ) { return wpa11y_item_matches( $i, $filter ); } ) );
+	usort( $rows, function ( $a, $b ) use ( $orderby, $dir ) {
+		switch ( $orderby ) {
+			case 'title':
+				$cmp = strcasecmp( $a['title'], $b['title'] );
+				break;
+			case 'type':
+				$cmp = strcmp( $a['type'], $b['type'] );
+				break;
+			case 'scanned':
+				$cmp = strcmp( $a['scanned_at'], $b['scanned_at'] );
+				break;
+			default:
+				$cmp = $a[ $orderby ] - $b[ $orderby ];
+		}
+		return 0 !== $cmp ? $dir * $cmp : strcasecmp( $a['title'], $b['title'] );
+	} );
+	return $rows;
+}
+
+function wpa11y_counts_label( $c ) {
+	switch ( $c['state'] ) {
+		case 'unscanned':
+			return __( 'Not scanned', 'wpa11y' );
+		case 'failed':
+			return __( 'Scan failed', 'wpa11y' );
+		case 'clean':
+			return __( 'No issues', 'wpa11y' );
+	}
+	return sprintf( _n( '%d error', '%d errors', $c['errors'], 'wpa11y' ), $c['errors'] ) . ' · '
+		. sprintf( _n( '%d warning', '%d warnings', $c['warnings'], 'wpa11y' ), $c['warnings'] );
+}
+
+function wpa11y_scanned_label( $item ) {
+	if ( 'unscanned' === $item['state'] ) { return __( 'Not scanned', 'wpa11y' ); }
+	$when = wpa11y_format_time( $item['scanned_at'] );
+	if ( 'failed' === $item['state'] ) {
+		return '' === $when ? __( 'Scan failed', 'wpa11y' ) : sprintf( __( 'Scan failed (last good: %s)', 'wpa11y' ), $when );
+	}
+	return $when;
+}
+
+function wpa11y_render_overview( $items, $filter, $orderby, $order, $last_full ) {
+	if ( ! isset( wpa11y_filters()[ $filter ] ) ) { $filter = 'all'; }
+	$orderby = wpa11y_valid_orderby( $orderby );
+	$order   = 'asc' === $order ? 'asc' : 'desc';
+	$rows    = wpa11y_overview_rows( $items, $filter, $orderby, $order );
+	$counts  = wpa11y_filter_counts( $items );
+	$base    = admin_url( 'admin.php?page=wpa11y' );
+
+	$h  = '<h1>' . esc_html__( 'Accessibility', 'wpa11y' ) . '</h1>';
+	$h .= '<p class="wpa11y-summary">' . esc_html( sprintf( __( '%1$d pages checked. %2$d with errors. %3$d warnings awaiting review.', 'wpa11y' ), count( $items ), $counts['errors'], array_sum( array_column( $items, 'warnings' ) ) ) ) . ' ';
+	$h .= '' !== $last_full
+		? esc_html( sprintf( __( 'Last full scan: %s.', 'wpa11y' ), wpa11y_format_time( $last_full ) ) )
+		: esc_html__( 'No full scan has reported yet.', 'wpa11y' );
+	$h .= ' <a href="' . esc_url( wpa11y_actions_url() ) . '">' . esc_html__( 'Scan runs on GitHub', 'wpa11y' ) . '</a></p>';
+
+	$links = array();
+	foreach ( wpa11y_filters() as $key => $label ) {
+		$url     = add_query_arg( array( 'filter' => $key, 'orderby' => $orderby, 'order' => $order ), $base );
+		$links[] = '<li><a href="' . esc_url( $url ) . '"' . ( $key === $filter ? ' class="current" aria-current="page"' : '' ) . '>' . esc_html( $label ) . ' <span class="count">(' . (int) $counts[ $key ] . ')</span></a>';
+	}
+	$h .= '<ul class="subsubsub">' . implode( ' |</li>', $links ) . '</li></ul>';
+
+	$cols = array(
+		'title'    => __( 'Page', 'wpa11y' ),
+		'type'     => __( 'Type', 'wpa11y' ),
+		'errors'   => __( 'Errors', 'wpa11y' ),
+		'warnings' => __( 'Warnings to review', 'wpa11y' ),
+		'scanned'  => __( 'Last scanned', 'wpa11y' ),
+	);
+	$h .= '<table class="wp-list-table widefat striped wpa11y-overview"><caption class="screen-reader-text">' . esc_html__( 'Pages and their accessibility issues', 'wpa11y' ) . '</caption><thead><tr>';
+	foreach ( $cols as $key => $label ) {
+		$sorted = $key === $orderby;
+		$next   = $sorted ? ( 'asc' === $order ? 'desc' : 'asc' ) : ( in_array( $key, array( 'title', 'type' ), true ) ? 'asc' : 'desc' );
+		$url    = add_query_arg( array( 'filter' => $filter, 'orderby' => $key, 'order' => $next ), $base );
+		$h     .= '<th scope="col"' . ( $sorted ? ' aria-sort="' . ( 'asc' === $order ? 'ascending' : 'descending' ) . '"' : '' ) . '><a href="' . esc_url( $url ) . '">' . esc_html( $label )
+			. ( $sorted ? ' <span aria-hidden="true">' . ( 'asc' === $order ? '▲' : '▼' ) . '</span>' : '' ) . '</a></th>';
+	}
+	$h .= '</tr></thead><tbody>';
+	if ( ! $rows ) {
+		$h .= '<tr><td colspan="5">' . esc_html__( 'No pages match this filter.', 'wpa11y' ) . '</td></tr>';
+	}
+	$none = '<span aria-hidden="true">—</span><span class="screen-reader-text">' . esc_html__( 'Not scanned', 'wpa11y' ) . '</span>';
+	foreach ( $rows as $r ) {
+		$type    = get_post_type_object( $r['type'] );
+		$unknown = 'unscanned' === $r['state'];
+		$h      .= '<tr><th scope="row"><strong><a href="' . esc_url( wpa11y_detail_url( $r['id'] ) ) . '">' . esc_html( $r['title'] ) . '</a></strong></th>';
+		$h      .= '<td>' . esc_html( $type ? $type->labels->singular_name : $r['type'] ) . '</td>';
+		$h      .= '<td>' . ( $unknown ? $none : (int) $r['errors'] ) . '</td>';
+		$h      .= '<td>' . ( $unknown ? $none : (int) $r['warnings'] ) . '</td>';
+		$h      .= '<td>' . esc_html( wpa11y_scanned_label( $r ) ) . '</td></tr>';
+	}
+	return $h . '</tbody></table>';
+}
+
+function wpa11y_page_overview() {
+	if ( ! current_user_can( WPA11Y_CAP ) ) { return; }
+	// phpcs:disable WordPress.Security.NonceVerification -- read-only view parameters.
+	$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
+	if ( $post_id ) {
+		wpa11y_page_detail( $post_id );
+		return;
+	}
+	$filter  = isset( $_GET['filter'] ) ? sanitize_key( wp_unslash( $_GET['filter'] ) ) : 'all';
+	$orderby = isset( $_GET['orderby'] ) ? sanitize_key( wp_unslash( $_GET['orderby'] ) ) : 'errors';
+	$order   = isset( $_GET['order'] ) && 'asc' === $_GET['order'] ? 'asc' : 'desc';
+	// phpcs:enable
+	echo '<div class="wrap wpa11y">' . wpa11y_render_overview( wpa11y_overview_items(), $filter, $orderby, $order, wpa11y_opt( 'wpa11y_last_full_scan' ) ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput
+}
+
+function wpa11y_column_html( $post_id ) {
+	if ( is_wp_error( wpa11y_scannable_post( $post_id ) ) ) { return esc_html__( 'Not published', 'wpa11y' ); }
+	$c = wpa11y_counts( wpa11y_get_result( $post_id ), wpa11y_active_rows( wpa11y_rows(), $post_id ) );
+	return '<a href="' . esc_url( wpa11y_detail_url( $post_id ) ) . '">' . esc_html( wpa11y_counts_label( $c ) ) . '</a>';
+}
+
+// Runs on admin_init so custom post types registered on init are included.
+add_action( 'admin_init', function () {
+	if ( ! current_user_can( WPA11Y_CAP ) ) { return; }
+	foreach ( wpa11y_post_types() as $type ) {
+		add_filter( "manage_{$type}_posts_columns", function ( $cols ) {
+			$cols['wpa11y'] = __( 'Accessibility', 'wpa11y' );
+			return $cols;
+		} );
+		add_action( "manage_{$type}_posts_custom_column", function ( $col, $post_id ) {
+			if ( 'wpa11y' === $col ) { echo wpa11y_column_html( $post_id ); } // phpcs:ignore WordPress.Security.EscapeOutput
+		}, 10, 2 );
+	}
 } );
