@@ -8,9 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 inside the WordPress editor, so staff see problems on the page they are editing, before and after
 publishing. Repo: https://github.com/tfscharff/wpa11y (public, GPLv2, like the sibling plugins).
 
-Status (2026-09-30): **empty repo, no design yet.** Start with the `superpowers:brainstorming`
-skill. This is new work, so treat it as architectural: questions, then approaches, then a written
-spec, then a plan. Don't write plugin code until the user has approved a spec.
+Status (2026-09-30): v1.0.0 built from `docs/superpowers/specs/2026-09-30-wpa11y-design.md` and
+`docs/superpowers/plans/2026-09-30-wpa11y.md`. Scans run on GitHub Actions with axe-core (not
+HTML_CodeSniffer); the local pa11y-dashboard is being retired. Every commit to `main` is a SemVer
+release via `bin/release.sh` (see README "Development").
 
 ## Background the user has already given
 
