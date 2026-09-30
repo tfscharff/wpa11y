@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           0.2.0
+ * Version:           0.3.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '0.2.0' );
+define( 'WPA11Y_VERSION', '0.3.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -349,4 +349,64 @@ function wpa11y_rescan_state( $requested, $attempted, $now ) {
 	$req = strtotime( $requested );
 	if ( '' !== (string) $attempted && strtotime( $attempted ) >= $req ) { return 'idle'; }
 	return ( $now - $req ) < WPA11Y_RESCAN_TIMEOUT ? 'pending' : 'timed_out';
+}
+
+/* ------------------------------------------------------------------ *
+ *  REST API
+ * ------------------------------------------------------------------ */
+
+add_action( 'rest_api_init', 'wpa11y_register_routes' );
+
+function wpa11y_register_routes() {
+	// path, method, callback, permission
+	$routes = array(
+		array( '/pages', 'GET', 'wpa11y_rest_pages', 'wpa11y_scanner_permission' ),
+		array( '/results', 'POST', 'wpa11y_rest_results', 'wpa11y_scanner_permission' ),
+		array( '/scan-complete', 'POST', 'wpa11y_rest_scan_complete', 'wpa11y_scanner_permission' ),
+	);
+	foreach ( $routes as $r ) {
+		register_rest_route( 'wpa11y/v1', $r[0], array(
+			'methods'             => $r[1],
+			'callback'            => $r[2],
+			'permission_callback' => $r[3],
+		) );
+	}
+}
+
+function wpa11y_scanner_permission( $request ) {
+	if ( wpa11y_bearer_ok( $request->get_header( 'authorization' ), wpa11y_opt( 'wpa11y_secret_hash' ) ) ) { return true; }
+	return new WP_Error( 'wpa11y_unauthorized', 'Missing or wrong scanner secret.', array( 'status' => 401 ) );
+}
+
+// Cookie-authenticated requests without a valid X-WP-Nonce run as logged out, so this also enforces the nonce.
+function wpa11y_editor_permission() {
+	return current_user_can( WPA11Y_CAP );
+}
+
+function wpa11y_rest_pages() {
+	$out = array();
+	foreach ( wpa11y_scannable_posts() as $post ) {
+		$out[] = array(
+			'id'    => (int) $post->ID,
+			'url'   => get_permalink( $post ),
+			'type'  => $post->post_type,
+			'title' => wpa11y_title( $post ),
+		);
+	}
+	return $out;
+}
+
+function wpa11y_rest_results( $request ) {
+	$body = $request->get_json_params();
+	$post = wpa11y_scannable_post( is_array( $body ) && isset( $body['post_id'] ) ? (int) $body['post_id'] : 0 );
+	if ( is_wp_error( $post ) ) { return $post; }
+	$clean = wpa11y_clean_result( $body, get_permalink( $post ) );
+	if ( is_wp_error( $clean ) ) { return $clean; }
+	wpa11y_save_result( $post->ID, wpa11y_merge_result( wpa11y_get_result( $post->ID ), $clean ) );
+	return array( 'ok' => true );
+}
+
+function wpa11y_rest_scan_complete( $request ) {
+	update_option( 'wpa11y_last_full_scan', wpa11y_iso( time() ), false );
+	return array( 'ok' => true );
 }
