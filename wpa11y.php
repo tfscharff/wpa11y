@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           0.3.0
+ * Version:           0.4.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '0.3.0' );
+define( 'WPA11Y_VERSION', '0.4.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -410,3 +410,194 @@ function wpa11y_rest_scan_complete( $request ) {
 	update_option( 'wpa11y_last_full_scan', wpa11y_iso( time() ), false );
 	return array( 'ok' => true );
 }
+
+/* ------------------------------------------------------------------ *
+ *  GitHub (rescan)
+ * ------------------------------------------------------------------ */
+
+function wpa11y_dispatch_request( $repo, $workflow, $ref, $token, $url ) {
+	return array(
+		'url'  => 'https://api.github.com/repos/' . $repo . '/actions/workflows/' . rawurlencode( $workflow ) . '/dispatches',
+		'args' => array(
+			'headers' => array(
+				'Accept'               => 'application/vnd.github+json',
+				'Authorization'        => 'Bearer ' . $token,
+				'X-GitHub-Api-Version' => '2022-11-28',
+				'User-Agent'           => 'wpa11y',
+				'Content-Type'         => 'application/json',
+			),
+			'body'    => wp_json_encode( array( 'ref' => $ref, 'inputs' => array( 'url' => $url ) ) ),
+			'timeout' => 15,
+		),
+	);
+}
+
+function wpa11y_dispatch( $url ) {
+	$token = wpa11y_opt( 'wpa11y_github_token' );
+	if ( '' === $token ) {
+		return new WP_Error( 'wpa11y_no_token', __( 'Rescan is not set up yet: an administrator needs to add a GitHub token under Accessibility → Settings.', 'wpa11y' ), array( 'status' => 400 ) );
+	}
+	$req = wpa11y_dispatch_request( wpa11y_opt( 'wpa11y_github_repo' ), wpa11y_opt( 'wpa11y_github_workflow' ), wpa11y_opt( 'wpa11y_github_ref' ), $token, $url );
+	$res = wp_remote_post( $req['url'], $req['args'] );
+	if ( is_wp_error( $res ) ) {
+		return new WP_Error( 'wpa11y_github', sprintf( __( 'Rescan could not start: %s', 'wpa11y' ), $res->get_error_message() ), array( 'status' => 502 ) );
+	}
+	$code = (int) wp_remote_retrieve_response_code( $res );
+	if ( 204 !== $code ) {
+		$body = json_decode( wp_remote_retrieve_body( $res ), true );
+		$why  = is_array( $body ) && isset( $body['message'] ) ? (string) $body['message'] : '';
+		return new WP_Error( 'wpa11y_github', sprintf( __( 'Rescan could not start: GitHub answered %1$d (%2$s).', 'wpa11y' ), $code, $why ), array( 'status' => 502 ) );
+	}
+	return true;
+}
+
+function wpa11y_actions_url() {
+	return 'https://github.com/' . wpa11y_opt( 'wpa11y_github_repo' ) . '/actions/workflows/' . wpa11y_opt( 'wpa11y_github_workflow' );
+}
+
+/* ------------------------------------------------------------------ *
+ *  Settings
+ * ------------------------------------------------------------------ */
+
+// Only the hash is kept; the secret itself is shown once, then lives only in GitHub.
+function wpa11y_new_secret() {
+	$secret = bin2hex( random_bytes( 32 ) );
+	update_option( 'wpa11y_secret_hash', hash( 'sha256', $secret ), false );
+	update_option( 'wpa11y_secret_created', wpa11y_iso( time() ), false );
+	return $secret;
+}
+
+// Returns array( option => value to save, list of error messages ). A blank token keeps the saved one.
+function wpa11y_clean_settings( $input ) {
+	$out    = array();
+	$errors = array();
+	$rules  = array(
+		'repo'     => array( 'wpa11y_github_repo', '#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', __( 'Repository must look like owner/name.', 'wpa11y' ) ),
+		'workflow' => array( 'wpa11y_github_workflow', '/^[A-Za-z0-9_.-]+\.ya?ml$/', __( 'Workflow must be a file name like scan.yml.', 'wpa11y' ) ),
+		'ref'      => array( 'wpa11y_github_ref', '#^[A-Za-z0-9_./-]+$#', __( 'Branch must be a branch name like main.', 'wpa11y' ) ),
+	);
+	foreach ( $rules as $field => $rule ) {
+		$v = trim( (string) ( $input[ $field ] ?? '' ) );
+		if ( preg_match( $rule[1], $v ) ) {
+			$out[ $rule[0] ] = $v;
+		} else {
+			$errors[] = $rule[2];
+		}
+	}
+	$token = trim( (string) ( $input['token'] ?? '' ) );
+	if ( ! empty( $input['remove_token'] ) ) {
+		$out['wpa11y_github_token'] = '';
+	} elseif ( '' !== $token ) {
+		if ( preg_match( '/^[A-Za-z0-9_]+$/', $token ) ) {
+			$out['wpa11y_github_token'] = $token;
+		} else {
+			$errors[] = __( 'That token has unexpected characters. Paste it again.', 'wpa11y' );
+		}
+	}
+	return array( $out, $errors );
+}
+
+function wpa11y_setup_notice_html( $is_admin ) {
+	$missing = array();
+	if ( '' === wpa11y_opt( 'wpa11y_secret_hash' ) ) { $missing[] = __( 'the scanner secret, so no results can arrive', 'wpa11y' ); }
+	if ( '' === wpa11y_opt( 'wpa11y_github_token' ) ) { $missing[] = __( 'a GitHub token, so Rescan is off', 'wpa11y' ); }
+	if ( ! $missing ) { return ''; }
+	$fix = $is_admin
+		? '<a href="' . esc_url( admin_url( 'admin.php?page=wpa11y-settings' ) ) . '">' . esc_html__( 'Finish setup', 'wpa11y' ) . '</a>'
+		: esc_html__( 'Ask a site administrator to finish setup.', 'wpa11y' );
+	return '<div class="notice notice-warning"><p>' . esc_html( sprintf( __( 'Accessibility checks are not fully set up. Missing: %s.', 'wpa11y' ), implode( '; ', $missing ) ) ) . ' ' . $fix . '</p></div>';
+}
+
+add_action( 'admin_notices', function () {
+	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+	if ( ! $screen || false === strpos( $screen->id, 'wpa11y' ) || false !== strpos( $screen->id, 'wpa11y-settings' ) ) { return; }
+	echo wpa11y_setup_notice_html( current_user_can( 'manage_options' ) ); // phpcs:ignore WordPress.Security.EscapeOutput -- built from escaped parts.
+} );
+
+add_action( 'admin_menu', 'wpa11y_admin_menu' );
+function wpa11y_admin_menu() {
+	add_menu_page( __( 'Accessibility', 'wpa11y' ), __( 'Accessibility', 'wpa11y' ), WPA11Y_CAP, 'wpa11y', 'wpa11y_page_overview', 'dashicons-universal-access-alt', 26 );
+	add_submenu_page( 'wpa11y', __( 'Accessibility overview', 'wpa11y' ), __( 'Overview', 'wpa11y' ), WPA11Y_CAP, 'wpa11y', 'wpa11y_page_overview' );
+	add_submenu_page( 'wpa11y', __( 'Dismissal log', 'wpa11y' ), __( 'Dismissal log', 'wpa11y' ), WPA11Y_CAP, 'wpa11y-log', 'wpa11y_page_log' );
+	add_submenu_page( 'wpa11y', __( 'Accessibility settings', 'wpa11y' ), __( 'Settings', 'wpa11y' ), 'manage_options', 'wpa11y-settings', 'wpa11y_page_settings' );
+}
+
+function wpa11y_page_settings() {
+	if ( ! current_user_can( 'manage_options' ) ) { return; }
+	$uid    = get_current_user_id();
+	$secret = get_transient( 'wpa11y_new_secret_' . $uid );
+	delete_transient( 'wpa11y_new_secret_' . $uid );
+	$errors = get_transient( 'wpa11y_settings_errors_' . $uid );
+	delete_transient( 'wpa11y_settings_errors_' . $uid );
+	$msg = isset( $_GET['wpa11y_msg'] ) ? sanitize_key( wp_unslash( $_GET['wpa11y_msg'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification -- display only.
+	echo wpa11y_render_settings( is_string( $secret ) ? $secret : '', is_array( $errors ) ? $errors : array(), $msg ); // phpcs:ignore WordPress.Security.EscapeOutput
+}
+
+function wpa11y_render_settings( $new_secret, $errors, $msg ) {
+	$post_url  = esc_url( admin_url( 'admin-post.php' ) );
+	$has_hash  = '' !== wpa11y_opt( 'wpa11y_secret_hash' );
+	$has_token = '' !== wpa11y_opt( 'wpa11y_github_token' );
+
+	$h = '<div class="wrap wpa11y"><h1>' . esc_html__( 'Accessibility settings', 'wpa11y' ) . '</h1>';
+	if ( 'saved' === $msg && ! $errors ) {
+		$h .= '<div class="notice notice-success"><p>' . esc_html__( 'Settings saved.', 'wpa11y' ) . '</p></div>';
+	}
+	if ( $errors ) {
+		$h .= '<div class="notice notice-error"><p>' . esc_html__( 'Some settings were not saved:', 'wpa11y' ) . '</p><ul>';
+		foreach ( $errors as $e ) { $h .= '<li>' . esc_html( $e ) . '</li>'; }
+		$h .= '</ul></div>';
+	}
+
+	$h .= '<h2>' . esc_html__( 'Scanner secret', 'wpa11y' ) . '</h2>';
+	if ( '' !== $new_secret ) {
+		$h .= '<div class="notice notice-warning inline"><p><label for="wpa11y-secret"><strong>' . esc_html__( 'New scanner secret.', 'wpa11y' ) . '</strong> '
+			. esc_html__( 'Copy it now into GitHub (repository Settings → Secrets and variables → Actions) as WPA11Y_SECRET. It will not be shown again.', 'wpa11y' )
+			. '</label></p><p><input type="text" id="wpa11y-secret" class="large-text code" readonly value="' . esc_attr( $new_secret ) . '"></p></div>';
+	}
+	$h .= '<p>' . ( $has_hash
+		? esc_html( sprintf( __( 'A secret is set (created %s).', 'wpa11y' ), wpa11y_format_time( wpa11y_opt( 'wpa11y_secret_created' ) ) ) )
+		: esc_html__( 'No secret yet. The scanner cannot send results until you generate one.', 'wpa11y' ) ) . '</p>';
+	$h .= '<p>' . esc_html__( 'Also add a GitHub secret named WPA11Y_SITE with this value:', 'wpa11y' ) . ' <code>' . esc_html( home_url() ) . '</code></p>';
+	$h .= '<form method="post" action="' . $post_url . '"><input type="hidden" name="action" value="wpa11y_secret">' . wp_nonce_field( 'wpa11y_secret', '_wpnonce', true, false )
+		. '<button type="submit" class="button">' . ( $has_hash ? esc_html__( 'Replace secret', 'wpa11y' ) : esc_html__( 'Generate secret', 'wpa11y' ) ) . '</button>'
+		. ( $has_hash ? ' <span class="description">' . esc_html__( 'The daily scan fails until GitHub has the new secret.', 'wpa11y' ) . '</span>' : '' ) . '</form>';
+
+	$h .= '<h2>' . esc_html__( 'Rescan (GitHub)', 'wpa11y' ) . '</h2>';
+	$h .= '<p>' . esc_html__( 'Rescan starts the scan workflow on GitHub. It needs a fine-grained personal access token that can only access this repository, with the permission "Actions: Read and write".', 'wpa11y' ) . '</p>';
+	$h .= '<form method="post" action="' . $post_url . '"><input type="hidden" name="action" value="wpa11y_settings">' . wp_nonce_field( 'wpa11y_settings', '_wpnonce', true, false );
+	$h .= '<table class="form-table" role="presentation">';
+	$fields = array(
+		'repo'     => array( __( 'Repository', 'wpa11y' ), wpa11y_opt( 'wpa11y_github_repo' ) ),
+		'workflow' => array( __( 'Workflow file', 'wpa11y' ), wpa11y_opt( 'wpa11y_github_workflow' ) ),
+		'ref'      => array( __( 'Branch', 'wpa11y' ), wpa11y_opt( 'wpa11y_github_ref' ) ),
+	);
+	foreach ( $fields as $name => $f ) {
+		$h .= '<tr><th scope="row"><label for="wpa11y-' . $name . '">' . esc_html( $f[0] ) . '</label></th><td><input type="text" class="regular-text" id="wpa11y-' . $name . '" name="' . $name . '" value="' . esc_attr( $f[1] ) . '"></td></tr>';
+	}
+	$h .= '<tr><th scope="row"><label for="wpa11y-token">' . esc_html__( 'GitHub token', 'wpa11y' ) . '</label></th><td>'
+		. '<input type="password" class="regular-text" id="wpa11y-token" name="token" autocomplete="off" aria-describedby="wpa11y-token-help">'
+		. '<p class="description" id="wpa11y-token-help">' . ( $has_token ? esc_html__( 'A token is saved. Leave blank to keep it.', 'wpa11y' ) : esc_html__( 'No token saved; Rescan is off.', 'wpa11y' ) ) . '</p>';
+	if ( $has_token ) {
+		$h .= '<p><label><input type="checkbox" name="remove_token" value="1"> ' . esc_html__( 'Remove the saved token', 'wpa11y' ) . '</label></p>';
+	}
+	$h .= '</td></tr></table><p class="submit"><button type="submit" class="button button-primary">' . esc_html__( 'Save settings', 'wpa11y' ) . '</button></p></form></div>';
+	return $h;
+}
+
+add_action( 'admin_post_wpa11y_settings', function () {
+	if ( ! current_user_can( 'manage_options' ) ) { wp_die( esc_html__( 'Sorry, you are not allowed to do that.', 'wpa11y' ), 403 ); }
+	check_admin_referer( 'wpa11y_settings' );
+	list( $out, $errors ) = wpa11y_clean_settings( wp_unslash( $_POST ) );
+	foreach ( $out as $name => $value ) { update_option( $name, $value, false ); }
+	if ( $errors ) { set_transient( 'wpa11y_settings_errors_' . get_current_user_id(), $errors, 5 * MINUTE_IN_SECONDS ); }
+	wp_safe_redirect( admin_url( 'admin.php?page=wpa11y-settings&wpa11y_msg=saved' ) );
+	exit;
+} );
+
+add_action( 'admin_post_wpa11y_secret', function () {
+	if ( ! current_user_can( 'manage_options' ) ) { wp_die( esc_html__( 'Sorry, you are not allowed to do that.', 'wpa11y' ), 403 ); }
+	check_admin_referer( 'wpa11y_secret' );
+	set_transient( 'wpa11y_new_secret_' . get_current_user_id(), wpa11y_new_secret(), 5 * MINUTE_IN_SECONDS );
+	wp_safe_redirect( admin_url( 'admin.php?page=wpa11y-settings' ) );
+	exit;
+} );
