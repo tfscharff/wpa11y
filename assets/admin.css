@@ -1,0 +1,50 @@
+/* wpa11y admin screens. Colors are WordPress admin defaults (AA contrast). */
+.wpa11y .wpa11y-group {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	margin: 0 0 8px;
+	max-width: 70rem;
+	padding: 0 12px;
+}
+.wpa11y .wpa11y-group > summary {
+	cursor: pointer;
+	padding: 10px 0;
+}
+.wpa11y .wpa11y-group > summary:focus-visible,
+.wpa11y h2[tabindex="-1"]:focus,
+.wpa11y button[aria-disabled="true"]:focus {
+	outline: 2px solid #2271b1;
+	outline-offset: 2px;
+}
+.wpa11y button[aria-disabled="true"] {
+	cursor: default;
+	opacity: 0.75;
+}
+.wpa11y .wpa11y-instances {
+	margin-left: 1.5em;
+}
+.wpa11y .wpa11y-issue {
+	border-top: 1px solid #dcdcde;
+	padding: 8px 0 12px;
+}
+.wpa11y .wpa11y-label {
+	font-weight: 600;
+}
+.wpa11y .wpa11y-context {
+	background: #f6f7f7;
+	overflow-wrap: anywhere;
+	padding: 8px;
+	white-space: pre-wrap;
+}
+.wpa11y .wpa11y-dismiss-form {
+	margin-top: 8px;
+}
+.wpa11y .wpa11y-dismiss-form textarea {
+	display: block;
+	margin: 4px 0 8px;
+	max-width: 40em;
+	width: 100%;
+}
+.wpa11y #wpa11y-error:empty {
+	display: none;
+}
