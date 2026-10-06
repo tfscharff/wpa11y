@@ -4,7 +4,7 @@
 //   node scan.mjs --print <url>   scan one URL and print its issues; no WordPress
 import puppeteer from 'puppeteer';
 import { AxePuppeteer } from '@axe-core/puppeteer';
-import { TAGS, EXCLUDE, attachText, cacheBust, dropDescribedSilentVideos, isChallenge, isSiteUrl, makeClient, runScan, toIssues, videoFacts } from './lib.mjs';
+import { TAGS, EXCLUDE, attachText, cacheBust, dropDescribedSilentVideos, isChallenge, isSiteUrl, makeClient, retryNotReady, runScan, toIssues, videoFacts } from './lib.mjs';
 
 async function scan(browser, url) {
 	const page = await browser.newPage();
@@ -16,9 +16,18 @@ async function scan(browser, url) {
 			throw new Error(`Cloudflare challenge page (HTTP ${status})`);
 		}
 		if (status >= 400) throw new Error(`HTTP ${status}`);
-		let axe = new AxePuppeteer(page).withTags(TAGS);
-		for (const selector of EXCLUDE) axe = axe.exclude(selector);
-		const found = toIssues(await axe.analyze());
+		const analyze = () => {
+			let axe = new AxePuppeteer(page).withTags(TAGS);
+			for (const selector of EXCLUDE) axe = axe.exclude(selector);
+			return axe.analyze();
+		};
+		const found = toIssues(await retryNotReady(analyze, {
+			wait: async n => {
+				console.log(`${url}: page not ready, retry ${n}`);
+				await page.waitForFunction(() => document.readyState === 'complete', { timeout: 15000 }).catch(() => {});
+				await new Promise(r => setTimeout(r, 2000 * n));
+			},
+		}));
 		// videoFacts goes in as source text: a string expression is not subject to the page's CSP.
 		const facts = await page.evaluate(`((videoFacts, selectors) => selectors.map(s => {
 			try { return videoFacts(document.querySelector(s), document); } catch { return { silent: false, described: false }; }

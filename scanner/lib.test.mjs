@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	MAX_ISSUES, toIssues, attachText, isChallenge, isSiteUrl, normalizeUrl, selectPages, cacheBust,
-	resultPayload, failurePayload, makeClient, runScan, videoFacts, dropDescribedSilentVideos,
+	resultPayload, failurePayload, makeClient, runScan, videoFacts, dropDescribedSilentVideos, retryNotReady,
 } from './lib.mjs';
 
 const SITE = 'https://library.wheatoncollege.edu';
@@ -202,4 +202,29 @@ test('dropDescribedSilentVideos: only video-caption on silent, described videos 
 	];
 	assert.deepEqual(dropDescribedSilentVideos(issues, facts).map(i => i.selector), ['v2', 'v3', 'p']);
 	assert.equal(dropDescribedSilentVideos(issues, []).length, 4);
+});
+
+test('retryNotReady: retries "Page/Frame is not ready", waiting first, then succeeds', async () => {
+	let calls = 0;
+	const waits = [];
+	const out = await retryNotReady(async () => {
+		calls++;
+		if (calls < 3) throw new Error('Page/Frame is not ready');
+		return 'ok';
+	}, { wait: async n => { waits.push(n); } });
+	assert.equal(out, 'ok');
+	assert.equal(calls, 3);
+	assert.deepEqual(waits, [1, 2]);
+});
+
+test('retryNotReady: gives up after the last try with the original error', async () => {
+	let calls = 0;
+	await assert.rejects(retryNotReady(async () => { calls++; throw new Error('Page/Frame is not ready'); }, { tries: 3, wait: async () => {} }), /not ready/);
+	assert.equal(calls, 3);
+});
+
+test('retryNotReady: any other error fails at once', async () => {
+	let calls = 0;
+	await assert.rejects(retryNotReady(async () => { calls++; throw new Error('HTTP 500'); }, { wait: async () => {} }), /HTTP 500/);
+	assert.equal(calls, 1);
 });

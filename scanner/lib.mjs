@@ -71,6 +71,21 @@ export function dropDescribedSilentVideos(issues, facts) {
 	return issues.filter((issue, n) => !(issue.code === 'video-caption' && facts[n] && facts[n].silent && facts[n].described));
 }
 
+// axe refuses to start ("Page/Frame is not ready") if the page doesn't answer
+// within a second or is mid-navigation. It happens now and then on the signage
+// pages and passes on the next try, so wait and retry that one error; any
+// other error fails at once. wait(n) is called before retry n.
+export async function retryNotReady(fn, { tries = 3, wait }) {
+	for (let n = 1; ; n++) {
+		try {
+			return await fn();
+		} catch (e) {
+			if (n >= tries || !/Page\/Frame is not ready/.test(String(e && e.message))) throw e;
+			await wait(n);
+		}
+	}
+}
+
 // Every page carries Cloudflare's JS Detections script (challenge-platform/…/jsd),
 // so only the interstitial's title or its _cf_chl_opt config counts as a challenge.
 export function isChallenge({ title, html }) {
