@@ -4,7 +4,7 @@
 //   node scan.mjs --print <url>   scan one URL and print its issues; no WordPress
 import puppeteer from 'puppeteer';
 import { AxePuppeteer } from '@axe-core/puppeteer';
-import { TAGS, EXCLUDE, attachText, cacheBust, isChallenge, isSiteUrl, makeClient, runScan, toIssues } from './lib.mjs';
+import { TAGS, EXCLUDE, attachText, cacheBust, dropDescribedSilentVideos, isChallenge, isSiteUrl, makeClient, runScan, toIssues, videoFacts } from './lib.mjs';
 
 async function scan(browser, url) {
 	const page = await browser.newPage();
@@ -18,7 +18,12 @@ async function scan(browser, url) {
 		if (status >= 400) throw new Error(`HTTP ${status}`);
 		let axe = new AxePuppeteer(page).withTags(TAGS);
 		for (const selector of EXCLUDE) axe = axe.exclude(selector);
-		const issues = toIssues(await axe.analyze());
+		const found = toIssues(await axe.analyze());
+		// videoFacts goes in as source text: a string expression is not subject to the page's CSP.
+		const facts = await page.evaluate(`((videoFacts, selectors) => selectors.map(s => {
+			try { return videoFacts(document.querySelector(s), document); } catch { return { silent: false, described: false }; }
+		}))(${videoFacts.toString()}, ${JSON.stringify(found.map(i => i.selector))})`);
+		const issues = dropDescribedSilentVideos(found, facts);
 		// Elements inside iframes or shadow roots have compound selectors; they just get no text.
 		const texts = await page.evaluate(selectors => selectors.map(s => {
 			try { const el = document.querySelector(s); return el ? el.textContent.slice(0, 1000) : ''; } catch { return ''; }

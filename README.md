@@ -49,6 +49,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **1.3.0** (2026-10-06) — The scanner no longer asks for captions on a silent video that has a text alternative: a `<video>` that is muted (attribute and playback) and has a non-blank `aria-label` or `aria-describedby` text. Silent videos without one, and videos with sound, are still flagged.
 - **1.2.2** (2026-09-30) — Settings: the note beside **Replace secret** now says what replacing would do, instead of reading like the scan is currently failing.
 - **1.2.1** (2026-09-30) — The scanner loads each page with a `?wpa11y=<time>` query so Cloudflare and WP Engine caches can't hand it an old copy; a rescan right after a fix now sees the fix.
 - **1.2.0** (2026-09-30) — Show in editor: each error and warning opens the block editor with the block that has the problem selected. The scanner now records each element's text so the block can be found.

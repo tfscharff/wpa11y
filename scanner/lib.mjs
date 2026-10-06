@@ -49,6 +49,28 @@ export function attachText(issues, texts) {
 	}));
 }
 
+// A silent video has no audio to caption; it needs a text alternative instead
+// (WCAG 1.2.1). Runs in the page via scan.mjs, so it must stay self-contained.
+// Silent = the muted attribute and muted playback (Foyer unmutes a slide whose
+// sound is on). Described = a non-blank aria-label or aria-describedby text.
+export function videoFacts(el, doc) {
+	if (!el || String(el.tagName).toUpperCase() !== 'VIDEO') return { silent: false, described: false };
+	const silent = el.hasAttribute('muted') && el.muted === true;
+	const label = String(el.getAttribute('aria-label') || '').trim();
+	const ids = String(el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+	const described = label !== '' || ids.some(id => {
+		const target = doc.getElementById(id);
+		return !!target && String(target.textContent).trim() !== '';
+	});
+	return { silent, described };
+}
+
+// axe asks a person to check every <video> for captions; a silent video with a
+// text alternative has already passed that check. facts line up with issues.
+export function dropDescribedSilentVideos(issues, facts) {
+	return issues.filter((issue, n) => !(issue.code === 'video-caption' && facts[n] && facts[n].silent && facts[n].described));
+}
+
 // Every page carries Cloudflare's JS Detections script (challenge-platform/…/jsd),
 // so only the interstitial's title or its _cf_chl_opt config counts as a challenge.
 export function isChallenge({ title, html }) {

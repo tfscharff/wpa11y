@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	MAX_ISSUES, toIssues, attachText, isChallenge, isSiteUrl, normalizeUrl, selectPages, cacheBust,
-	resultPayload, failurePayload, makeClient, runScan,
+	resultPayload, failurePayload, makeClient, runScan, videoFacts, dropDescribedSilentVideos,
 } from './lib.mjs';
 
 const SITE = 'https://library.wheatoncollege.edu';
@@ -161,4 +161,45 @@ test('cacheBust: adds a wpa11y query so Cloudflare and WP Engine serve a fresh c
 	// Not utm_*: WP Engine leaves utm_ parameters out of its cache key.
 	assert.ok(!cacheBust(`${SITE}/`, 1).includes('utm_'));
 	assert.equal(cacheBust('not a url', 1), 'not a url');
+});
+
+// A stand-in for a DOM element: just what videoFacts reads.
+const el = (tag, attrs = {}, muted = false) => ({
+	tagName: tag, muted,
+	hasAttribute: name => Object.prototype.hasOwnProperty.call(attrs, name),
+	getAttribute: name => (Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null),
+});
+const doc = texts => ({ getElementById: id => (id in texts ? { textContent: texts[id] } : null) });
+
+test('videoFacts: silent means the muted attribute and muted playback', () => {
+	assert.equal(videoFacts(el('VIDEO', { muted: '' }, true), doc({})).silent, true);
+	// Foyer unmutes a slide whose sound is on, leaving the attribute behind.
+	assert.equal(videoFacts(el('VIDEO', { muted: '' }, false), doc({})).silent, false);
+	assert.equal(videoFacts(el('VIDEO', {}, true), doc({})).silent, false);
+});
+
+test('videoFacts: described by a non-blank aria-label or aria-describedby text', () => {
+	assert.equal(videoFacts(el('VIDEO', { 'aria-label': 'Fall hours: 8am to midnight' }), doc({})).described, true);
+	assert.equal(videoFacts(el('VIDEO', { 'aria-label': '   ' }), doc({})).described, false);
+	assert.equal(videoFacts(el('VIDEO', { 'aria-describedby': 'gone d1' }), doc({ d1: ' Welcome ' })).described, true);
+	assert.equal(videoFacts(el('VIDEO', { 'aria-describedby': 'd1' }), doc({ d1: ' ' })).described, false);
+	assert.equal(videoFacts(el('VIDEO', {}), doc({})).described, false);
+});
+
+test('videoFacts: anything that is not a video, or missing, is neither', () => {
+	assert.deepEqual(videoFacts(el('AUDIO', { muted: '', 'aria-label': 'x' }, true), doc({})), { silent: false, described: false });
+	assert.deepEqual(videoFacts(null, doc({})), { silent: false, described: false });
+});
+
+test('dropDescribedSilentVideos: only video-caption on silent, described videos is dropped', () => {
+	const issue = (code, selector) => ({ type: 'warning', code, selector });
+	const issues = [issue('video-caption', 'v1'), issue('video-caption', 'v2'), issue('video-caption', 'v3'), issue('color-contrast', 'p')];
+	const facts = [
+		{ silent: true, described: true },   // muted with alt text: dropped
+		{ silent: true, described: false },  // muted, no alt text: kept
+		{ silent: false, described: true },  // has sound: kept
+		{ silent: true, described: true },   // another rule: kept
+	];
+	assert.deepEqual(dropDescribedSilentVideos(issues, facts).map(i => i.selector), ['v2', 'v3', 'p']);
+	assert.equal(dropDescribedSilentVideos(issues, []).length, 4);
 });
