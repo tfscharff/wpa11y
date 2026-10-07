@@ -3,7 +3,7 @@ run-name: ${{ inputs.url && format('Rescan {0}', inputs.url) || 'Daily scan' }}
 
 on:
   schedule:
-    - cron: '0 10 * * *'   # 06:00 US Eastern (summer), 05:00 (winter)
+    - cron: '17 9 * * *'   # 05:17 US Eastern (summer), 04:17 (winter). Off the hour: GitHub delays top-of-hour runs most.
   workflow_dispatch:
     inputs:
       url:

@@ -32,7 +32,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## How it works
 
-- `scanner/` — Node script run by `.github/workflows/scan.yml` (daily at 10:00 UTC, or one URL on
+- `scanner/` — Node script run by `.github/workflows/scan.yml` (daily at 9:17 UTC, or one URL on
   demand). It gets the page list from `GET /wp-json/wpa11y/v1/pages`, scans each page with
   Puppeteer + axe, and posts results to `POST /wp-json/wpa11y/v1/results` with the secret.
 - `wpa11y.php` — stores each page's latest result in post meta and dismissals in the
@@ -49,6 +49,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **1.3.2** (2026-10-07) — The daily scan is scheduled for 9:17 UTC instead of 10:00. GitHub delays scheduled runs at the top of the hour the most; the 10:00 scan was starting 4–9 hours late.
 - **1.3.1** (2026-10-06) — The scanner retries a page up to twice when axe reports "Page/Frame is not ready" (seen now and then on the signage pages), instead of failing the whole daily scan.
 - **1.3.0** (2026-10-06) — The scanner no longer asks for captions on a silent video that has a text alternative: a `<video>` that is muted (attribute and playback) and has a non-blank `aria-label` or `aria-describedby` text. Silent videos without one, and videos with sound, are still flagged.
 - **1.2.2** (2026-09-30) — Settings: the note beside **Replace secret** now says what replacing would do, instead of reading like the scan is currently failing.
