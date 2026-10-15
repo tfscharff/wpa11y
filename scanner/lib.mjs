@@ -168,15 +168,37 @@ export function makeClient({ site, secret, fetchFn = fetch }) {
 
 // Scans pages one at a time. A page that fails to scan is still reported (as
 // an error) so the plugin can say so; nothing stops the rest of the run.
-export async function runScan({ client, scan, onlyUrl = '', log = console, now = () => new Date() }) {
+// Cloudflare rate-limits a runner that loads uncached pages back to back (HTTP 429
+// challenge). gap paces pages; a challenge waits each backoff step and retries the
+// page, until the run has waited budget ms in all, then pages fail as before.
+async function scanPaced(scan, url, state, { sleep, backoff, budget, log }) {
+	for (let n = 0; ; n++) {
+		try {
+			return await scan(url);
+		} catch (err) {
+			const delay = backoff[n];
+			if (!/Cloudflare challenge page/.test(String(err && err.message)) || delay === undefined || state.waited + delay > budget) throw err;
+			log.log(`${url}: Cloudflare challenge, waiting ${delay / 1000}s`);
+			state.waited += delay;
+			await sleep(delay);
+		}
+	}
+}
+
+export async function runScan({
+	client, scan, onlyUrl = '', log = console, now = () => new Date(),
+	sleep = ms => new Promise(r => setTimeout(r, ms)), gap = 0, backoff = [], budget = 0,
+}) {
 	const pages = selectPages(await client.pages(), onlyUrl);
+	const state = { waited: 0 };
 	let failed = 0;
-	for (const page of pages) {
+	for (const [i, page] of pages.entries()) {
+		if (i > 0 && gap) await sleep(gap);
 		const scannedAt = now().toISOString();
 		let ok = true;
 		let body;
 		try {
-			body = resultPayload(page, await scan(page.url), scannedAt);
+			body = resultPayload(page, await scanPaced(scan, page.url, state, { sleep, backoff, budget: budget || Infinity, log }), scannedAt);
 			log.log(`${page.url}: ${body.issues.length} issue(s)`);
 		} catch (err) {
 			ok = false;

@@ -65,7 +65,10 @@ try {
 	if (printUrl) {
 		console.log(JSON.stringify(await scan(browser, printUrl), null, 2));
 	} else {
-		summary = await runScan({ client: makeClient({ site, secret }), scan: url => scan(browser, url), onlyUrl });
+		summary = await runScan({
+			client: makeClient({ site, secret }), scan: url => scan(browser, url), onlyUrl,
+			gap: 3000, backoff: [60000, 120000, 240000], budget: 20 * 60000,
+		});
 	}
 } finally {
 	await browser.close();

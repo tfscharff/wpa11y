@@ -228,3 +228,43 @@ test('retryNotReady: any other error fails at once', async () => {
 	await assert.rejects(retryNotReady(async () => { calls++; throw new Error('HTTP 500'); }, { wait: async () => {} }), /HTTP 500/);
 	assert.equal(calls, 1);
 });
+
+test('runScan: pauses between pages, not before the first', async () => {
+	const client = fakeClient([page(1, '/a/'), page(2, '/b/'), page(3, '/c/')]);
+	const slept = [];
+	await runScan({ client, scan: async () => [], log: quiet, now, gap: 3000, sleep: async ms => { slept.push(ms); } });
+	assert.deepEqual(slept, [3000, 3000]);
+});
+
+test('runScan: a Cloudflare challenge backs off and retries the same page', async () => {
+	const client = fakeClient([page(1, '/a/'), page(2, '/b/')]);
+	let calls = 0;
+	const slept = [];
+	const scan = async url => {
+		if (url.endsWith('/a/') && ++calls < 3) throw new Error('Cloudflare challenge page (HTTP 429)');
+		return [];
+	};
+	const summary = await runScan({ client, scan, log: quiet, now, sleep: async ms => { slept.push(ms); }, backoff: [60000, 120000] });
+	assert.deepEqual(summary, { scanned: 2, failed: 0 });
+	assert.deepEqual(slept, [60000, 120000]);
+	assert.ok(!client.posted[0].error);
+});
+
+test('runScan: challenge retries stop when the backoff list or the budget runs out', async () => {
+	const client = fakeClient([page(1, '/a/'), page(2, '/b/'), page(3, '/c/')]);
+	const slept = [];
+	const scan = async () => { throw new Error('Cloudflare challenge page (HTTP 429)'); };
+	const summary = await runScan({ client, scan, log: quiet, now, sleep: async ms => { slept.push(ms); }, backoff: [60000, 120000], budget: 290000 });
+	assert.deepEqual(summary, { scanned: 3, failed: 3 });
+	// Page 1 waits 60s + 120s, page 2 60s; any further wait would pass the 290s budget.
+	assert.deepEqual(slept, [60000, 120000, 60000]);
+	assert.equal(client.posted[2].error, 'Cloudflare challenge page (HTTP 429)');
+});
+
+test('runScan: other scan errors are not retried', async () => {
+	const client = fakeClient([page(1, '/a/')]);
+	let calls = 0;
+	const summary = await runScan({ client, scan: async () => { calls++; throw new Error('HTTP 500'); }, log: quiet, now, sleep: async () => { throw new Error('should not wait'); } });
+	assert.deepEqual(summary, { scanned: 1, failed: 1 });
+	assert.equal(calls, 1);
+});

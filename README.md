@@ -49,6 +49,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **1.3.3** (2026-10-15) — The scanner waits 3 seconds between pages, and when Cloudflare answers with its rate-limit challenge (HTTP 429) it backs off 1, 2, then 4 minutes and retries that page (up to 20 minutes of waiting per run). The 2026-10-15 daily scan lost 25 of 39 pages to that challenge.
 - **1.3.2** (2026-10-07) — The daily scan is scheduled for 9:17 UTC instead of 10:00. GitHub delays scheduled runs at the top of the hour the most; the 10:00 scan was starting 4–9 hours late.
 - **1.3.1** (2026-10-06) — The scanner retries a page up to twice when axe reports "Page/Frame is not ready" (seen now and then on the signage pages), instead of failing the whole daily scan.
 - **1.3.0** (2026-10-06) — The scanner no longer asks for captions on a silent video that has a text alternative: a `<video>` that is muted (attribute and playback) and has a non-blank `aria-label` or `aria-describedby` text. Silent videos without one, and videos with sound, are still flagged.
