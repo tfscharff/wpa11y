@@ -1,4 +1,4 @@
-/* wpa11y page detail: dismiss, undo, rescan. ES5, no build step. */
+/* wpa11y page detail: dismiss (one or a rule group), undo, rescan. ES5, no build step. */
 (function () {
 	'use strict';
 
@@ -124,7 +124,7 @@
 		var issue = button.closest('.wpa11y-issue');
 		var form;
 
-		if (button.classList.contains('wpa11y-dismiss-open')) {
+		if (button.classList.contains('wpa11y-dismiss-open') || button.classList.contains('wpa11y-dismiss-all-open')) {
 			form = document.getElementById(button.getAttribute('aria-controls'));
 			form.hidden = false;
 			button.setAttribute('aria-expanded', 'true');
@@ -132,9 +132,20 @@
 		} else if (button.classList.contains('wpa11y-dismiss-cancel')) {
 			form = button.closest('.wpa11y-dismiss-form');
 			form.hidden = true;
-			var opener = issue.querySelector('.wpa11y-dismiss-open');
+			var opener = region.querySelector('[aria-controls="' + form.id + '"]');
 			opener.setAttribute('aria-expanded', 'false');
 			if (deferred) { render(deferred, '#wpa11y-h-warnings'); } else { opener.focus(); }
+		} else if (button.classList.contains('wpa11y-dismiss-confirm') && button.closest('.wpa11y-dismiss-all-form')) {
+			// Every warning still listed in this rule group, as the page shows it.
+			form = button.closest('.wpa11y-dismiss-form');
+			var items = form.closest('details').querySelectorAll('.wpa11y-issue[data-key]');
+			var keys = [];
+			for (var k = 0; k < items.length; k++) { keys.push(items[k].getAttribute('data-key')); }
+			send(button, 'dismiss-group', {
+				post: Number(postId),
+				keys: keys,
+				note: form.querySelector('textarea').value
+			}, '#wpa11y-h-warnings', cfg.strings.dismissedAll);
 		} else if (button.classList.contains('wpa11y-dismiss-confirm')) {
 			form = button.closest('.wpa11y-dismiss-form');
 			send(button, 'dismiss', {

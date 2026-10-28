@@ -13,8 +13,9 @@ reports to the plugin. In wp-admin, anyone who can edit pages sees:
 - An **Accessibility** column on the Pages list (and other public post types).
 
 **Errors** are definite failures and cannot be dismissed; they clear when fixed. **Warnings** are
-things the checker could not decide; after a person reviews one they can dismiss it with a note. A
-dismissal applies to that rule on that element: if the element changes, the warning comes back.
+things the checker could not decide; after a person reviews one they can dismiss it with a note. When a rule
+repeats, **Dismiss all N…** on its group dismisses every listed warning with one note (still one log
+row each, undone one at a time). A dismissal applies to that rule on that element: if the element changes, the warning comes back.
 
 ## Setup
 
@@ -49,6 +50,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **1.4.0** (2026-10-28) — Page detail: a warning group with two or more items has **Dismiss all N…**, which dismisses every warning listed in that rule group with one note. Each still gets its own log row and Undo; ones already dismissed are skipped, and if the page is out of date with the latest scan nothing is dismissed. Floor Maps alone had 85 identical color-contrast reviews.
 - **1.3.3** (2026-10-15) — The scanner waits 3 seconds between pages, and when Cloudflare answers with its rate-limit challenge (HTTP 429) it backs off 1, 2, then 4 minutes and retries that page (up to 20 minutes of waiting per run). The 2026-10-15 daily scan lost 25 of 39 pages to that challenge.
 - **1.3.2** (2026-10-07) — The daily scan is scheduled for 9:17 UTC instead of 10:00. GitHub delays scheduled runs at the top of the hour the most; the 10:00 scan was starting 4–9 hours late.
 - **1.3.1** (2026-10-06) — The scanner retries a page up to twice when axe reports "Page/Frame is not ready" (seen now and then on the signage pages), instead of failing the whole daily scan.

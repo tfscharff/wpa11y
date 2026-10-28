@@ -63,7 +63,8 @@ check( 'detail: stale issues labelled', strpos( $html, 'from the last successful
 
 $GLOBALS['wt_routes'] = array();
 wpa11y_register_routes();
-check( 'routes: all seven registered', count( $GLOBALS['wt_routes'] ), 7 );
+check( 'routes: all eight registered', count( $GLOBALS['wt_routes'] ), 8 );
+check( 'routes: dismiss-group uses editor permission', $GLOBALS['wt_routes']['wpa11y/v1/dismiss-group']['permission_callback'], 'wpa11y_editor_permission' );
 check( 'routes: editor routes use editor permission', $GLOBALS['wt_routes']['wpa11y/v1/dismiss']['permission_callback'], 'wpa11y_editor_permission' );
 
 // Review fixes.
@@ -75,3 +76,32 @@ check( 'status: timed-out rescan is reported as such', array( $res['pending'], $
 $res = wpa11y_rest_dismiss( new WP_REST_Request( array( 'post' => 10, 'key' => wpa11y_issue_key( 'color-contrast', '#a' ), 'note' => ' needs a <main> landmark ' ) ) );
 check( 'dismiss: note keeps tag names', wpa11y_rows()[0]['note'], 'needs a <main> landmark' );
 check( 'dismiss: note escaped on display', strpos( $res['html'], 'needs a &lt;main&gt; landmark' ) !== false, true );
+
+// Dismiss all in a rule group.
+wt_reset( array( 'posts' => array( array( 'ID' => 10 ) ) ) );
+$three = array(
+	wt_issue( 'error', 'image-alt', 'img' ),
+	wt_issue( 'warning', 'color-contrast', '#a' ),
+	wt_issue( 'warning', 'color-contrast', '#b' ),
+	wt_issue( 'warning', 'color-contrast', '#c' ),
+	wt_issue( 'warning', 'link-name', 'a' ),
+);
+wpa11y_save_result( 10, wt_result( $three ) );
+$html = wpa11y_render_detail( 10 );
+check( 'dismiss all: button only on warning groups of two or more', substr_count( $html, 'wpa11y-dismiss-all-open' ), 1 );
+check( 'dismiss all: button names the count', strpos( $html, 'Dismiss all 3…<span class="screen-reader-text"> color-contrast warnings</span>' ) !== false, true );
+check( 'dismiss all: form labelled', strpos( $html, 'Why are all 3 OK?' ) !== false, true );
+$k = function ( $sel ) { return wpa11y_issue_key( 'color-contrast', $sel ); };
+wpa11y_add_dismissal( 10, 'color-contrast', '#c', 'earlier', 5 );
+check( 'dismiss all: stale key refuses the whole group', wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 10, 'keys' => array( $k( '#a' ), $k( '#gone' ) ) ) ) )->get_error_data(), array( 'status' => 409 ) );
+check( 'dismiss all: nothing written on a stale key', count( wpa11y_rows() ), 1 );
+check( 'dismiss all: errors refused', wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 10, 'keys' => array( $k( '#a' ), wpa11y_issue_key( 'image-alt', 'img' ) ) ) ) )->get_error_code(), 'wpa11y_error_not_dismissable' );
+check( 'dismiss all: empty refused', wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 10, 'keys' => array() ) ) )->get_error_data(), array( 'status' => 400 ) );
+check( 'dismiss all: non-list refused', wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 10, 'keys' => 'x' ) ) )->get_error_code(), 'wpa11y_bad_keys' );
+check( 'dismiss all: non-string key is stale', wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 10, 'keys' => array( array( 'x' ) ) ) ) )->get_error_code(), 'wpa11y_not_current' );
+$res = wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 10, 'keys' => array( $k( '#a' ), $k( '#b' ), $k( '#c' ) ), 'note' => ' halo labels, checked by eye ' ) ) );
+check( 'dismiss all: counts move', $res['counts'], array( 'errors' => 1, 'warnings' => 1, 'dismissed' => 3, 'state' => 'issues' ) );
+check( 'dismiss all: one row per item, already-dismissed skipped', count( wpa11y_rows() ), 3 );
+check( 'dismiss all: note on each new row, old note kept', array_column( wpa11y_rows(), 'note', 'selector' ), array( '#b' => 'halo labels, checked by eye', '#a' => 'halo labels, checked by eye', '#c' => 'earlier' ) );
+check( 'dismiss all: undo stays per item', substr_count( $res['html'], 'wpa11y-undo' ), 3 );
+check( 'dismiss all: draft refused', wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 11, 'keys' => array( $k( '#a' ) ) ) ) )->get_error_code(), 'wpa11y_bad_post' );

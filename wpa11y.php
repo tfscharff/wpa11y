@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           1.3.3
+ * Version:           1.4.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '1.3.3' );
+define( 'WPA11Y_VERSION', '1.4.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -366,6 +366,7 @@ function wpa11y_register_routes() {
 		array( '/scan-complete', 'POST', 'wpa11y_rest_scan_complete', 'wpa11y_scanner_permission' ),
 		array( '/status', 'GET', 'wpa11y_rest_status', 'wpa11y_editor_permission' ),
 		array( '/dismiss', 'POST', 'wpa11y_rest_dismiss', 'wpa11y_editor_permission' ),
+		array( '/dismiss-group', 'POST', 'wpa11y_rest_dismiss_group', 'wpa11y_editor_permission' ),
 		array( '/undismiss', 'POST', 'wpa11y_rest_undismiss', 'wpa11y_editor_permission' ),
 		array( '/rescan', 'POST', 'wpa11y_rest_rescan', 'wpa11y_editor_permission' ),
 	);
@@ -695,6 +696,20 @@ function wpa11y_render_instance( $section, $i, $edit_url = '' ) {
 	return $h . '</li>';
 }
 
+// One note for every warning listed in this rule group; admin.js sends the group's keys.
+function wpa11y_render_dismiss_all( $code, $n ) {
+	$fid = 'wpa11y-fa-' . substr( md5( $code ), 0, 12 );
+	$h   = '<p><button type="button" class="button wpa11y-dismiss-all-open" aria-expanded="false" aria-controls="' . esc_attr( $fid ) . '">'
+		. esc_html( sprintf( __( 'Dismiss all %d…', 'wpa11y' ), $n ) )
+		. '<span class="screen-reader-text">' . esc_html( sprintf( __( ' %s warnings', 'wpa11y' ), $code ) ) . '</span></button></p>';
+	$h  .= '<div class="wpa11y-dismiss-form wpa11y-dismiss-all-form" id="' . esc_attr( $fid ) . '" hidden>';
+	$h  .= '<label for="' . esc_attr( $fid ) . '-note">' . esc_html( sprintf( __( 'Why are all %d OK? (optional; the same note is logged for each)', 'wpa11y' ), $n ) ) . '</label>';
+	$h  .= '<textarea id="' . esc_attr( $fid ) . '-note" rows="2"></textarea>';
+	$h  .= '<button type="button" class="button button-primary wpa11y-dismiss-confirm">' . esc_html( sprintf( __( 'Confirm dismiss all %d', 'wpa11y' ), $n ) ) . '</button> ';
+	$h  .= '<button type="button" class="button wpa11y-dismiss-cancel">' . esc_html__( 'Cancel', 'wpa11y' ) . '</button>';
+	return $h . '</div>';
+}
+
 function wpa11y_render_section( $section, $label, $intro, $issues, $empty, $edit_url = '' ) {
 	$h = '<h2 id="wpa11y-h-' . $section . '" tabindex="-1">' . esc_html( $label ) . ' <span class="wpa11y-count">(' . count( $issues ) . ')</span></h2>';
 	if ( ! $issues ) { return $h . '<p>' . esc_html( $empty ) . '</p>'; }
@@ -706,6 +721,7 @@ function wpa11y_render_section( $section, $label, $intro, $issues, $empty, $edit
 		if ( '' !== $first['help_url'] ) {
 			$h .= '<p><a href="' . esc_url( $first['help_url'] ) . '">' . esc_html( sprintf( __( 'How to fix %s (Deque University)', 'wpa11y' ), $code ) ) . '</a></p>';
 		}
+		if ( 'warnings' === $section && count( $list ) > 1 ) { $h .= wpa11y_render_dismiss_all( $code, count( $list ) ); }
 		$h .= '<ol class="wpa11y-instances">';
 		foreach ( $list as $i ) { $h .= wpa11y_render_instance( $section, $i, $edit_url ); }
 		$h .= '</ol></details>';
@@ -807,9 +823,41 @@ function wpa11y_rest_dismiss( $request ) {
 	if ( 'warning' !== $issue['type'] ) {
 		return new WP_Error( 'wpa11y_error_not_dismissable', __( 'Errors cannot be dismissed. Fix them in the page editor; they clear on the next scan.', 'wpa11y' ), array( 'status' => 400 ) );
 	}
-	// Kept as typed (notes often name tags like <main>); every display escapes it.
-	$note = wpa11y_clip( trim( wp_check_invalid_utf8( (string) $request->get_param( 'note' ) ) ), 1000 );
-	wpa11y_add_dismissal( $post->ID, $issue['code'], $issue['selector'], $note, get_current_user_id() );
+	wpa11y_add_dismissal( $post->ID, $issue['code'], $issue['selector'], wpa11y_clean_note( $request->get_param( 'note' ) ), get_current_user_id() );
+	return wpa11y_status_payload( $post->ID );
+}
+
+// Kept as typed (notes often name tags like <main>); every display escapes it.
+function wpa11y_clean_note( $note ) {
+	return wpa11y_clip( trim( wp_check_invalid_utf8( (string) $note ) ), 1000 );
+}
+
+// "Dismiss all" for one rule group: the keys the page showed, one note, one row each.
+// Every key is checked before anything is written, so a stale tab dismisses nothing.
+// Keys already dismissed are left alone (wpa11y_add_dismissal returns the active row).
+function wpa11y_rest_dismiss_group( $request ) {
+	$post = wpa11y_scannable_post( (int) $request->get_param( 'post' ) );
+	if ( is_wp_error( $post ) ) { return $post; }
+	$keys = $request->get_param( 'keys' );
+	if ( ! is_array( $keys ) || ! $keys || count( $keys ) > WPA11Y_MAX_ISSUES ) {
+		return new WP_Error( 'wpa11y_bad_keys', __( 'Nothing to dismiss.', 'wpa11y' ), array( 'status' => 400 ) );
+	}
+	$result = wpa11y_get_result( $post->ID );
+	$issues = array();
+	foreach ( $keys as $key ) {
+		$issue = wpa11y_find_issue( $result ? $result['issues'] : array(), is_string( $key ) ? $key : '' );
+		if ( ! $issue ) {
+			return new WP_Error( 'wpa11y_not_current', __( 'Some of these issues are not in the latest scan. Reload the page.', 'wpa11y' ), array( 'status' => 409 ) );
+		}
+		if ( 'warning' !== $issue['type'] ) {
+			return new WP_Error( 'wpa11y_error_not_dismissable', __( 'Errors cannot be dismissed. Fix them in the page editor; they clear on the next scan.', 'wpa11y' ), array( 'status' => 400 ) );
+		}
+		$issues[] = $issue;
+	}
+	$note = wpa11y_clean_note( $request->get_param( 'note' ) );
+	foreach ( $issues as $issue ) {
+		wpa11y_add_dismissal( $post->ID, $issue['code'], $issue['selector'], $note, get_current_user_id() );
+	}
 	return wpa11y_status_payload( $post->ID );
 }
 
@@ -857,12 +905,13 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 		'root'    => esc_url_raw( rest_url( 'wpa11y/v1/' ) ),
 		'nonce'   => wp_create_nonce( 'wp_rest' ),
 		'strings' => array(
-			'dismissed' => __( 'Dismissed.', 'wpa11y' ),
-			'undone'    => __( 'Dismissal undone; the warning is back under review.', 'wpa11y' ),
-			'scanning'  => __( 'Scanning. Results usually arrive in 1 to 2 minutes.', 'wpa11y' ),
-			'scanDone'  => __( 'Scan finished.', 'wpa11y' ),
-			'timedOut'  => __( 'The rescan has not reported back after 10 minutes. Check the scan runs on GitHub; the link is next to the Rescan button.', 'wpa11y' ),
-			'failed'    => __( 'Request failed', 'wpa11y' ),
+			'dismissed'    => __( 'Dismissed.', 'wpa11y' ),
+			'dismissedAll' => __( 'All dismissed.', 'wpa11y' ),
+			'undone'       => __( 'Dismissal undone; the warning is back under review.', 'wpa11y' ),
+			'scanning'     => __( 'Scanning. Results usually arrive in 1 to 2 minutes.', 'wpa11y' ),
+			'scanDone'     => __( 'Scan finished.', 'wpa11y' ),
+			'timedOut'     => __( 'The rescan has not reported back after 10 minutes. Check the scan runs on GitHub; the link is next to the Rescan button.', 'wpa11y' ),
+			'failed'       => __( 'Request failed', 'wpa11y' ),
 		),
 	) ) . ';', 'before' );
 } );
