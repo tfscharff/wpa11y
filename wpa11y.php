@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       wpa11y
  * Description:       Site accessibility dashboard for editors. A daily axe scan on GitHub Actions reports every published page; editors drill into issues, review and dismiss warnings, and rescan a page.
- * Version:           1.4.0
+ * Version:           1.5.0
  * Author:            Madeleine Clark Wallace Library
  * License:           GPL-2.0+
  * Requires at least: 6.0
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'WPA11Y_VERSION', '1.4.0' );
+define( 'WPA11Y_VERSION', '1.5.0' );
 define( 'WPA11Y_META', '_wpa11y_result' );
 define( 'WPA11Y_RESCAN_META', '_wpa11y_rescan_requested' );
 define( 'WPA11Y_CAP', 'edit_pages' );
@@ -27,6 +27,7 @@ function wpa11y_opt( $name ) {
 		'wpa11y_github_repo'     => 'tfscharff/wpa11y',
 		'wpa11y_github_workflow' => 'scan.yml',
 		'wpa11y_github_ref'      => 'main',
+		'wpa11y_notify'          => 'off',
 	);
 	$v = get_option( $name, $defaults[ $name ] ?? '' );
 	return is_string( $v ) ? $v : '';
@@ -408,13 +409,88 @@ function wpa11y_rest_results( $request ) {
 	if ( is_wp_error( $post ) ) { return $post; }
 	$clean = wpa11y_clean_result( $body, get_permalink( $post ) );
 	if ( is_wp_error( $clean ) ) { return $clean; }
-	wpa11y_save_result( $post->ID, wpa11y_merge_result( wpa11y_get_result( $post->ID ), $clean ) );
+	$previous = wpa11y_get_result( $post->ID );
+	wpa11y_save_result( $post->ID, wpa11y_merge_result( $previous, $clean ) );
+	wpa11y_maybe_notify( $post, $previous, $clean );
 	return array( 'ok' => true );
 }
 
 function wpa11y_rest_scan_complete( $request ) {
 	update_option( 'wpa11y_last_full_scan', wpa11y_iso( time() ), false );
 	return array( 'ok' => true );
+}
+
+/* ------------------------------------------------------------------ *
+ *  Notifications (one email per page when a scan finds new issues)
+ * ------------------------------------------------------------------ */
+
+define( 'WPA11Y_SHARE_URL', 'https://github.com/tfscharff/wpshare/releases/latest' );
+
+// wpshare ("Sitemap") emails a page's owner; wpa11y only fires its action.
+function wpa11y_share_active() {
+	return false !== has_action( 'wpshare_notify' );
+}
+
+// Issues in this scan that the previous result didn't have, minus dismissed warnings.
+function wpa11y_new_issues( $previous, $clean, $active_rows ) {
+	$seen = array();
+	foreach ( ( is_array( $previous ) ? $previous['issues'] ?? array() : array() ) as $i ) {
+		$seen[ wpa11y_issue_key( $i['code'], $i['selector'] ) ] = true;
+	}
+	$fresh = array_values( array_filter( $clean['issues'], function ( $i ) use ( $seen ) {
+		return ! isset( $seen[ wpa11y_issue_key( $i['code'], $i['selector'] ) ] );
+	} ) );
+	$split = wpa11y_split( $fresh, $active_rows );
+	return array( 'errors' => $split['errors'], 'warnings' => $split['warnings'] );
+}
+
+// Plain text that names the page, so the reader knows where to look without logging in.
+function wpa11y_notice( $post, $new ) {
+	$n     = count( $new['errors'] ) + count( $new['warnings'] );
+	$title = wpa11y_title( $post );
+	$lines = array(
+		sprintf( _n( 'The latest accessibility scan of "%1$s" found %2$d new issue.', 'The latest accessibility scan of "%1$s" found %2$d new issues.', $n, 'wpa11y' ), $title, $n ),
+		sprintf( __( 'Page: %s', 'wpa11y' ), get_permalink( $post ) ),
+	);
+	$sections = array(
+		'errors'   => __( 'Errors (definite failures; fix them):', 'wpa11y' ),
+		'warnings' => __( 'Warnings to review (dismiss them if they are fine):', 'wpa11y' ),
+	);
+	foreach ( $sections as $section => $label ) {
+		if ( ! $new[ $section ] ) { continue; }
+		$lines[] = '';
+		$lines[] = $label;
+		foreach ( wpa11y_group( $new[ $section ] ) as $code => $list ) {
+			$lines[] = sprintf( '- %1$s (%2$s): %3$d', $list[0]['message'], $code, count( $list ) );
+		}
+	}
+	$lines[] = '';
+	$lines[] = sprintf( __( 'Details, Show in editor and Dismiss: %s', 'wpa11y' ), wpa11y_detail_url( $post->ID ) );
+	return array(
+		'subject' => sprintf( _n( 'Accessibility: %1$d new issue on %2$s', 'Accessibility: %1$d new issues on %2$s', $n, 'wpa11y' ), $n, $title ),
+		'message' => implode( "\n", $lines ),
+		'url'     => wpa11y_detail_url( $post->ID ),
+	);
+}
+
+// Returns true when a notice went out. Nothing for failed scans, unchanged rescans,
+// or the site's first scan (which would otherwise email about every page at once).
+function wpa11y_maybe_notify( $post, $previous, $clean ) {
+	$mode = wpa11y_opt( 'wpa11y_notify' );
+	if ( isset( $clean['error'] ) || ! in_array( $mode, array( 'email', 'wpshare' ), true ) ) { return false; }
+	if ( ! is_array( $previous ) && '' === wpa11y_opt( 'wpa11y_last_full_scan' ) ) { return false; }
+	$new = wpa11y_new_issues( $previous, $clean, wpa11y_active_rows( wpa11y_rows(), $post->ID ) );
+	if ( ! $new['errors'] && ! $new['warnings'] ) { return false; }
+	$notice = wpa11y_notice( $post, $new );
+	if ( 'wpshare' === $mode ) {
+		if ( ! wpa11y_share_active() ) { return false; }
+		do_action( 'wpshare_notify', $post->ID, array( 'source' => 'wpa11y' ) + $notice );
+		return true;
+	}
+	$to = wpa11y_opt( 'wpa11y_notify_email' );
+	if ( ! is_email( $to ) ) { return false; }
+	$site = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
+	return (bool) wp_mail( $to, '[' . $site . '] ' . $notice['subject'], $notice['message'] );
 }
 
 /* ------------------------------------------------------------------ *
@@ -499,6 +575,19 @@ function wpa11y_clean_settings( $input ) {
 		} else {
 			$errors[] = __( 'That token has unexpected characters. Paste it again.', 'wpa11y' );
 		}
+	}
+	$email = trim( (string) ( $input['notify_email'] ?? '' ) );
+	if ( '' === $email || is_email( $email ) ) {
+		$out['wpa11y_notify_email'] = $email;
+	} else {
+		$errors[] = __( 'The notification address is not a valid email address.', 'wpa11y' );
+	}
+	// "Email one address" needs a good address; otherwise the previous choice stays.
+	$notify = in_array( $input['notify'] ?? '', array( 'off', 'email', 'wpshare' ), true ) ? $input['notify'] : 'off';
+	if ( 'email' !== $notify || ( isset( $out['wpa11y_notify_email'] ) && '' !== $email ) ) {
+		$out['wpa11y_notify'] = $notify;
+	} elseif ( '' === $email ) {
+		$errors[] = __( 'Enter the address to send notifications to.', 'wpa11y' );
 	}
 	return array( $out, $errors );
 }
@@ -586,7 +675,39 @@ function wpa11y_render_settings( $new_secret, $errors, $msg ) {
 	if ( $has_token ) {
 		$h .= '<p><label><input type="checkbox" name="remove_token" value="1"> ' . esc_html__( 'Remove the saved token', 'wpa11y' ) . '</label></p>';
 	}
-	$h .= '</td></tr></table><p class="submit"><button type="submit" class="button button-primary">' . esc_html__( 'Save settings', 'wpa11y' ) . '</button></p></form></div>';
+	$h .= '</td></tr></table>';
+	$h .= wpa11y_render_notify_settings();
+	$h .= '<p class="submit"><button type="submit" class="button button-primary">' . esc_html__( 'Save settings', 'wpa11y' ) . '</button></p></form></div>';
+	return $h;
+}
+
+function wpa11y_render_notify_settings() {
+	$mode   = wpa11y_opt( 'wpa11y_notify' );
+	$active = wpa11y_share_active();
+	$share  = '<a href="' . esc_url( WPA11Y_SHARE_URL ) . '">' . esc_html__( 'Sitemap plugin (wpshare)', 'wpa11y' ) . '</a>';
+	$h      = '<h2>' . esc_html__( 'Email notifications', 'wpa11y' ) . '</h2>';
+	$h     .= '<p>' . esc_html__( 'When a scan finds errors or warnings on a page that were not there before and are not dismissed, one email about that page is sent, naming the page and listing the new issues. Unchanged rescans and failed scans send nothing.', 'wpa11y' ) . '</p>';
+	if ( 'wpshare' === $mode && ! $active ) {
+		$h .= '<div class="notice notice-warning inline"><p>' . esc_html__( 'Notifications are set to go to page owners, but the Sitemap plugin (wpshare) is not active, so none are being sent. Install and activate it, or choose another option.', 'wpa11y' ) . '</p></div>';
+	}
+	$h .= '<table class="form-table" role="presentation"><tr><th scope="row">' . esc_html__( 'Send to', 'wpa11y' ) . '</th><td><fieldset><legend class="screen-reader-text">' . esc_html__( 'Send notifications to', 'wpa11y' ) . '</legend>';
+	$choices = array(
+		'off'     => esc_html__( 'Nobody (off)', 'wpa11y' ),
+		'email'   => esc_html__( 'One address, for every page', 'wpa11y' ),
+		'wpshare' => esc_html__( 'Each page’s owner', 'wpa11y' ),
+	);
+	foreach ( $choices as $value => $label ) {
+		$describe = 'wpshare' === $value ? ' aria-describedby="wpa11y-notify-share-help"' : '';
+		$h       .= '<label><input type="radio" name="notify" value="' . $value . '"' . ( $value === $mode ? ' checked' : '' ) . $describe . '> ' . $label . '</label><br>';
+	}
+	$h .= '<p class="description" id="wpa11y-notify-share-help">' . ( $active
+		? esc_html__( 'The Sitemap plugin (wpshare) is active. Set each page’s owner there; pages without an owner go to the fallback address in its settings.', 'wpa11y' )
+		/* translators: %s: link to the Sitemap plugin (wpshare). */
+		: sprintf( esc_html__( 'Page owners need the free %s, which lets you give each page an owner. It is not active on this site.', 'wpa11y' ), $share ) ) . '</p>';
+	$h .= '</fieldset></td></tr>';
+	$h .= '<tr><th scope="row"><label for="wpa11y-notify-email">' . esc_html__( 'Address', 'wpa11y' ) . '</label></th><td>'
+		. '<input type="email" class="regular-text" id="wpa11y-notify-email" name="notify_email" autocomplete="email" value="' . esc_attr( wpa11y_opt( 'wpa11y_notify_email' ) ) . '" aria-describedby="wpa11y-notify-email-help">'
+		. '<p class="description" id="wpa11y-notify-email-help">' . esc_html__( 'Used when “One address” is chosen.', 'wpa11y' ) . '</p></td></tr></table>';
 	return $h;
 }
 

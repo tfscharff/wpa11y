@@ -24,14 +24,14 @@ check( 'secret: new one each time', wpa11y_new_secret() !== $secret, true );
 
 $base = array( 'repo' => ' tfscharff/wpa11y ', 'workflow' => 'scan.yml', 'ref' => 'main', 'token' => '' );
 list( $out, $errors ) = wpa11y_clean_settings( $base );
-check( 'settings: valid', $out, array( 'wpa11y_github_repo' => 'tfscharff/wpa11y', 'wpa11y_github_workflow' => 'scan.yml', 'wpa11y_github_ref' => 'main' ) );
+check( 'settings: valid', $out, array( 'wpa11y_github_repo' => 'tfscharff/wpa11y', 'wpa11y_github_workflow' => 'scan.yml', 'wpa11y_github_ref' => 'main', 'wpa11y_notify_email' => '', 'wpa11y_notify' => 'off' ) );
 check( 'settings: no errors', $errors, array() );
 list( $out, $errors ) = wpa11y_clean_settings( array_merge( $base, array( 'token' => ' github_pat_ABC_123 ' ) ) );
 check( 'settings: new token saved', $out['wpa11y_github_token'], 'github_pat_ABC_123' );
 list( $out, $errors ) = wpa11y_clean_settings( array_merge( $base, array( 'remove_token' => '1', 'token' => 'x' ) ) );
 check( 'settings: remove token wins', $out['wpa11y_github_token'], '' );
 list( $out, $errors ) = wpa11y_clean_settings( array_merge( $base, array( 'repo' => 'not a repo', 'workflow' => 'scan.sh', 'ref' => 'a b', 'token' => 'abc def' ) ) );
-check( 'settings: bad values not saved', $out, array() );
+check( 'settings: bad values not saved', $out, array( 'wpa11y_notify_email' => '', 'wpa11y_notify' => 'off' ) );
 check( 'settings: one error each', count( $errors ), 4 );
 
 wt_reset();

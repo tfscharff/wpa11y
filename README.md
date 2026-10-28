@@ -11,6 +11,11 @@ reports to the plugin. In wp-admin, anyone who can edit pages sees:
   problem selected. **Rescan this page** reruns the check in about 1–2 minutes.
 - **Accessibility → Dismissal log** — every dismissed warning with who, when and why; undo or restore.
 - An **Accessibility** column on the Pages list (and other public post types).
+- **Email notifications** (optional, Settings) — when a scan finds errors or warnings on a page that
+  weren't there before and aren't dismissed, one email names the page and lists the new issues by
+  rule. Send them to one address for every page, or to each page's owner with the
+  [Sitemap plugin (wpshare)](https://github.com/tfscharff/wpshare/releases/latest), which lets you
+  give each page an owner. wpa11y works the same without wpshare.
 
 **Errors** are definite failures and cannot be dismissed; they clear when fixed. **Warnings** are
 things the checker could not decide; after a person reviews one they can dismiss it with a note. When a rule
@@ -27,6 +32,8 @@ row each, undone one at a time). A dismissal applies to that rule on that elemen
 3. Create a fine-grained personal access token limited to this repository with **Actions: Read and
    write**, and paste it under **Rescan (GitHub)** in Settings.
 4. Run the first scan: GitHub → Actions → Accessibility scan → Run workflow.
+5. Optional: under **Email notifications** in Settings, choose one address or page owners. Nothing
+   is emailed for the site's first full scan, so a new install doesn't send a backlog.
 
 GitHub pauses scheduled workflows in repositories with no activity for 60 days; re-enable the
 workflow from the Actions tab if the daily scan stops.
@@ -50,6 +57,7 @@ workflow from the Actions tab if the daily scan stops.
 
 ## Changelog
 
+- **1.5.0** (2026-10-28) — Email notifications (Settings → Email notifications): when a scan finds new, undismissed errors or warnings on a page, one plain-text email names the page, lists the new issues by rule and links to its detail. Send to one address, or to each page's owner through the [Sitemap plugin (wpshare)](https://github.com/tfscharff/wpshare/releases/latest); without wpshare, wpa11y works as before and Settings says where to get it. Unchanged rescans, failed scans and the site's first scan send nothing.
 - **1.4.0** (2026-10-28) — Page detail: a warning group with two or more items has **Dismiss all N…**, which dismisses every warning listed in that rule group with one note. Each still gets its own log row and Undo; ones already dismissed are skipped, and if the page is out of date with the latest scan nothing is dismissed. Floor Maps alone had 85 identical color-contrast reviews.
 - **1.3.3** (2026-10-15) — The scanner waits 3 seconds between pages, and when Cloudflare answers with its rate-limit challenge (HTTP 429) it backs off 1, 2, then 4 minutes and retries that page (up to 20 minutes of waiting per run). The 2026-10-15 daily scan lost 25 of 39 pages to that challenge.
 - **1.3.2** (2026-10-07) — The daily scan is scheduled for 9:17 UTC instead of 10:00. GitHub delays scheduled runs at the top of the hour the most; the 10:00 scan was starting 4–9 hours late.

@@ -84,6 +84,9 @@ function wt_reset( array $state = array() ) {
 	$GLOBALS['wt_caps']    = array( 'edit_pages' => true, 'manage_options' => true );
 	$GLOBALS['wt_http']    = array( 'calls' => array(), 'response' => array( 'response' => array( 'code' => 204 ), 'body' => '' ) );
 	$GLOBALS['wpdb']       = new Wt_Wpdb();
+	$GLOBALS['wt_listen']  = array();
+	$GLOBALS['wt_actions'] = array();
+	$GLOBALS['wt_mail']    = array();
 	foreach ( $state['posts'] ?? array() as $p ) { wt_add_post( $p ); }
 	if ( function_exists( 'wpa11y_rows' ) ) { wpa11y_rows( true ); }
 }
@@ -103,6 +106,13 @@ function add_action( $hook, $cb, $priority = 10, $args = 1 ) { $GLOBALS['wt_hook
 function add_filter( $hook, $cb, $priority = 10, $args = 1 ) { $GLOBALS['wt_hooks'][] = array( 'filter', $hook, $cb ); }
 function register_activation_hook( $file, $cb ) { $GLOBALS['wt_hooks'][] = array( 'activation', $file, $cb ); }
 function register_rest_route( $ns, $route, $args ) { $GLOBALS['wt_routes'][ $ns . $route ] = $args; }
+// Other plugins' hooks: has_action() sees $GLOBALS['wt_listen'], do_action() records the call.
+function has_action( $hook ) { return isset( $GLOBALS['wt_listen'][ $hook ] ) ? 10 : false; }
+function do_action( $hook, ...$args ) { $GLOBALS['wt_actions'][] = array( $hook, $args ); }
+function wp_mail( $to, $subject, $message ) { $GLOBALS['wt_mail'][] = compact( 'to', 'subject', 'message' ); return true; }
+function is_email( $e ) { return false !== filter_var( (string) $e, FILTER_VALIDATE_EMAIL ) ? (string) $e : false; }
+function get_bloginfo( $k ) { return 'name' === $k ? 'Library &amp; Archives' : ''; }
+function wp_specialchars_decode( $s, $q = ENT_NOQUOTES ) { return htmlspecialchars_decode( (string) $s, $q ); }
 
 // Escaping, i18n, sanitizing — same no-double-encode behaviour as core.
 function esc_html( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8', false ); }
