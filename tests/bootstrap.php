@@ -160,6 +160,7 @@ function get_post_types( $args = array(), $output = 'names' ) { return array( 'p
 function is_post_type_viewable( $t ) { return in_array( $t, array( 'post', 'page', 'attachment' ), true ); }
 function get_post_type_object( $t ) { return (object) array( 'labels' => (object) array( 'singular_name' => ucfirst( $t ) ) ); }
 function get_posts( $args ) {
+	$GLOBALS['wt_get_posts_args'] = $args;
 	$types = (array) $args['post_type'];
 	$out   = array();
 	foreach ( $GLOBALS['wt_posts'] as $p ) {

@@ -31,3 +31,16 @@ check( 'action: undo twice refused', wpa11y_log_action( 'undo', 1, 5 ), false );
 check( 'action: restore undone', wpa11y_log_action( 'restore', 3, 5 ), true );
 check( 'action: unknown action refused', wpa11y_log_action( 'delete', 2, 5 ), false );
 check( 'action: rows never deleted', count( wpa11y_rows() ), 5 );
+
+// A dismissed warning that the latest scan reports as an error is no longer an active dismissal.
+wt_reset( array( 'posts' => array( array( 'ID' => 10 ) ) ) );
+wpa11y_save_result( 10, wt_result( array( wt_issue( 'error', 'color-contrast', '#a' ) ) ) );
+wpa11y_add_dismissal( 10, 'color-contrast', '#a', '', 5 );
+check( 'log: warning now an error is gone', array_column( wpa11y_log_rows( wpa11y_rows(), 'all' ), 'status' ), array( 'gone' ) );
+
+// Notes, rules, elements and page titles are escaped.
+wt_reset( array( 'posts' => array( array( 'ID' => 10, 'post_title' => '&lt;b&gt;Hours&lt;/b&gt;' ) ) ) );
+wpa11y_add_dismissal( 10, 'x<i>', '<script>alert(1)</script>', '<img src=x onerror=alert(2)>', 5 );
+$html = wpa11y_render_log( wpa11y_log_rows( wpa11y_rows(), 'all' ), 'all', '' );
+check( 'log: stored text never becomes markup', array( strpos( $html, '<script' ), strpos( $html, '<img' ), strpos( $html, '<b>' ), strpos( $html, '<i>' ) ), array( false, false, false, false ) );
+check( 'log: note and title shown escaped', array( strpos( $html, '&lt;img src=x onerror=alert(2)&gt;' ) !== false, strpos( $html, '&lt;b&gt;Hours&lt;/b&gt;' ) !== false ), array( true, true ) );
