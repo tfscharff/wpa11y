@@ -102,6 +102,24 @@ test('makeClient: bearer header, JSON body, readable errors', async () => {
 	assert.equal(calls[2].init.body, '{"scanned":3}');
 });
 
+test('makeClient: GET sends no body, an empty reply is null, a long error page is clipped', async () => {
+	const calls = [];
+	const replies = [new Response('', { status: 200 }), new Response('<html>' + 'x'.repeat(5000), { status: 503 })];
+	const c = makeClient({ site: SITE, secret: 's', fetchFn: async (url, init) => { calls.push(init); return replies.shift(); } });
+	assert.equal(await c.postResult({}), null);
+	await assert.rejects(c.pages(), err => {
+		assert.match(err.message, /^GET \/pages → 503: <html>x+$/);
+		assert.equal(err.message.length, 'GET /pages → 503: '.length + 300);
+		return true;
+	});
+	assert.equal(calls[1].body, undefined);
+});
+
+test('normalizeUrl: drops the fragment, so a #anchor still matches its page', () => {
+	assert.equal(normalizeUrl(`${SITE}/about#hours`), `${SITE}/about/`);
+	assert.deepEqual(selectPages([page(1, '/about/')], `${SITE}/about/#hours`).map(p => p.id), [1]);
+});
+
 function fakeClient(pages, failUpload = () => false) {
 	const posted = [];
 	let completed = null;
@@ -267,4 +285,11 @@ test('runScan: other scan errors are not retried', async () => {
 	const summary = await runScan({ client, scan: async () => { calls++; throw new Error('HTTP 500'); }, log: quiet, now, sleep: async () => { throw new Error('should not wait'); } });
 	assert.deepEqual(summary, { scanned: 1, failed: 1 });
 	assert.equal(calls, 1);
+});
+
+test('runScan: a page list that cannot be fetched stops the run before scan-complete', async () => {
+	let completed = false;
+	const client = { pages: async () => { throw new Error('GET /pages → 401: no'); }, postResult: async () => {}, scanComplete: async () => { completed = true; } };
+	await assert.rejects(runScan({ client, scan: async () => [], log: quiet, now }), /401/);
+	assert.equal(completed, false);
 });

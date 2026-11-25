@@ -37,3 +37,34 @@ $GLOBALS['wt_routes'] = array();
 wpa11y_register_routes();
 check( 'routes: scanner routes registered', array_slice( array_keys( $GLOBALS['wt_routes'] ), 0, 3 ), array( 'wpa11y/v1/pages', 'wpa11y/v1/results', 'wpa11y/v1/scan-complete' ) );
 check( 'routes: every route checks permission', count( array_filter( $GLOBALS['wt_routes'], function ( $r ) { return empty( $r['permission_callback'] ) || '__return_true' === $r['permission_callback']; } ) ), 0 );
+check( 'routes: scanner routes take the secret, editor routes the capability', array_map( function ( $r ) { return array( $r['methods'], $r['permission_callback'] ); }, $GLOBALS['wt_routes'] ), array(
+	'wpa11y/v1/pages'         => array( 'GET', 'wpa11y_scanner_permission' ),
+	'wpa11y/v1/results'       => array( 'POST', 'wpa11y_scanner_permission' ),
+	'wpa11y/v1/scan-complete' => array( 'POST', 'wpa11y_scanner_permission' ),
+	'wpa11y/v1/status'        => array( 'GET', 'wpa11y_editor_permission' ),
+	'wpa11y/v1/dismiss'       => array( 'POST', 'wpa11y_editor_permission' ),
+	'wpa11y/v1/dismiss-group' => array( 'POST', 'wpa11y_editor_permission' ),
+	'wpa11y/v1/undismiss'     => array( 'POST', 'wpa11y_editor_permission' ),
+	'wpa11y/v1/rescan'        => array( 'POST', 'wpa11y_editor_permission' ),
+) );
+
+// The page list asks WordPress for published, unprotected pages of every scanned type.
+wpa11y_rest_pages();
+check( 'pages: query asks for published pages without a password', array_intersect_key( $GLOBALS['wt_get_posts_args'], array_flip( array( 'post_type', 'post_status', 'has_password', 'numberposts' ) ) ), array( 'post_type' => array( 'post', 'page' ), 'post_status' => 'publish', 'has_password' => false, 'numberposts' => -1 ) );
+
+// Knowing the stored hash is not enough, and nothing gets in before a secret exists.
+check( 'perm: the stored hash itself is refused', is_wp_error( wpa11y_scanner_permission( new WP_REST_Request( array(), array( 'Authorization' => 'Bearer ' . hash( 'sha256', 's3cret' ) ) ) ) ), true );
+check( 'perm: other schemes refused', is_wp_error( wpa11y_scanner_permission( new WP_REST_Request( array(), array( 'Authorization' => 'Basic s3cret' ) ) ) ), true );
+update_option( 'wpa11y_secret_hash', '' );
+check( 'perm: no secret generated, nothing gets in', is_wp_error( wpa11y_scanner_permission( new WP_REST_Request( array(), $auth ) ) ), true );
+update_option( 'wpa11y_secret_hash', hash( 'sha256', 's3cret' ) );
+
+// A refused payload changes nothing and emails nobody.
+update_option( 'wpa11y_notify', 'email' );
+update_option( 'wpa11y_notify_email', 'web@example.edu' );
+$before = wpa11y_get_result( 10 );
+check( 'results: one malformed issue refuses the body', wpa11y_rest_results( new WP_REST_Request( array(), $auth, array_merge( $body, array( 'issues' => array( wt_issue( 'error', 'link-name', 'a' ), 'junk' ) ) ) ) )->get_error_code(), 'wpa11y_bad_issue' );
+check( 'results: too many issues refused', wpa11y_rest_results( new WP_REST_Request( array(), $auth, array_merge( $body, array( 'issues' => array_fill( 0, 1001, wt_issue( 'error', 'x', 'p' ) ) ) ) ) )->get_error_code(), 'wpa11y_bad_issues' );
+check( 'results: non-object body refused', wpa11y_rest_results( new WP_REST_Request( array(), $auth, null ) )->get_error_code(), 'wpa11y_bad_post' );
+check( 'results: refused payloads leave the stored result alone', wpa11y_get_result( 10 ), $before );
+check( 'results: refused payloads send no email', $GLOBALS['wt_mail'], array() );

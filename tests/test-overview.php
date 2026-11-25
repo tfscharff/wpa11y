@@ -46,3 +46,11 @@ $html = wpa11y_render_overview( $items, 'all', 'errors', 'desc', '' );
 check( 'overview: error count links to errors section', strpos( $html, '<td><a href="' . WT_SITE . '/wp-admin/admin.php?page=wpa11y&amp;post=2#wpa11y-h-errors">3<span class="screen-reader-text"> errors on alpha</span></a></td>' ) !== false, true );
 check( 'overview: warning count links to warnings section', strpos( $html, 'post=1#wpa11y-h-warnings">2<span class="screen-reader-text"> warnings on Beta</span></a>' ) !== false, true );
 check( 'overview: zero counts are plain text', strpos( $html, '<td>0</td>' ) !== false, true );
+
+// Titles are decoded for display, so they must be escaped again: in the row, the count links and the column.
+wt_reset( array( 'posts' => array( array( 'ID' => 10, 'post_title' => '&lt;script&gt;alert(1)&lt;/script&gt;' ) ) ) );
+wpa11y_save_result( 10, wt_result( array( wt_issue( 'error', 'image-alt', 'img' ) ) ) );
+$built = wpa11y_overview_items();
+check( 'items: title decoded', $built[0]['title'], '<script>alert(1)</script>' );
+$html = wpa11y_render_overview( $built, 'all', 'errors', 'desc', '' );
+check( 'overview: decoded title never becomes markup', array( strpos( $html, '<script' ), substr_count( $html, '&lt;script&gt;alert(1)&lt;/script&gt;' ) ), array( false, 2 ) );

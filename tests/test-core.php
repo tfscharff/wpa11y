@@ -78,3 +78,24 @@ check( 'clean: element text kept, clipped to 300', $t['issues'][0]['text'], str_
 $old = wt_issue( 'error', 'list', 'ul' );
 unset( $old['text'] );
 check( 'clean: results without text (older scanner) get empty text', wpa11y_clean_result( array_merge( $good, array( 'issues' => array( $old ) ) ), $permalink )['issues'][0]['text'], '' );
+
+// Malformed or hostile payloads.
+$with = function ( $issues, $extra = array() ) use ( $good, $permalink ) {
+	return wpa11y_clean_result( array_merge( $good, array( 'issues' => $issues ), $extra ), $permalink );
+};
+check( 'clean: exactly the issue cap is accepted', count( $with( array_fill( 0, 1000, wt_issue( 'error', 'x', 'p' ) ) )['issues'] ), 1000 );
+check( 'clean: one bad item refuses the whole body', $with( array( wt_issue( 'error', 'x', 'p' ), 'not an issue' ) )->get_error_code(), 'wpa11y_bad_issue' );
+check( 'clean: issue type matched exactly', $with( array( wt_issue( 'ERROR', 'x', 'p' ) ) )->get_error_code(), 'wpa11y_bad_issue' );
+check( 'clean: issue without a code refused', $with( array( wt_issue( 'error', '', 'p' ) ) )->get_error_code(), 'wpa11y_bad_issue' );
+check( 'clean: issues as a string refused', $with( 'x' )->get_error_code(), 'wpa11y_bad_issues' );
+check( 'clean: url on another host refused', $with( array(), array( 'url' => 'https://evil.example/page-10/' ) )->get_error_code(), 'wpa11y_url_mismatch' );
+check( 'clean: url differing only by scheme refused', $with( array(), array( 'url' => 'http://library.wheatoncollege.edu/page-10/' ) )->get_error_code(), 'wpa11y_url_mismatch' );
+check( 'clean: empty issue list is a clean page', $with( array() )['issues'], array() );
+check( 'clean: blank error is not a failure report', $with( array(), array( 'error' => '   ' ) ), array( 'scanned_at' => '2026-09-30T10:04:11Z', 'url' => WT_SITE . '/page-10', 'issues' => array() ) );
+check( 'clean: failure message clipped to 500', strlen( $with( array(), array( 'error' => str_repeat( 'e', 900 ) ) )['error'] ), 500 );
+$clipped = $with( array( wt_issue( 'error', str_repeat( 'c', 150 ), str_repeat( 's', 1500 ), array( 'message' => str_repeat( 'm', 600 ) ) ) ) )['issues'][0];
+check( 'clean: code, selector and message clipped', array( strlen( $clipped['code'] ), strlen( $clipped['selector'] ), strlen( $clipped['message'] ) ), array( 100, 1000, 500 ) );
+$nested = $with( array( wt_issue( 'warning', 'x', 'p', array( 'message' => array( 'm' ), 'selector' => array( '#a' ), 'context' => array( '<p>' ), 'help_url' => array( 'https://x' ), 'text' => array( 't' ) ) ) ) )['issues'][0];
+check( 'clean: non-text fields become empty strings', array( $nested['message'], $nested['selector'], $nested['context'], $nested['help_url'], $nested['text'] ), array( '', '', '', '', '' ) );
+// CURRENT BEHAVIOUR (suspected bug): a non-string code passes the "needs a code" check and is stored as ''.
+check( 'clean: non-string code stored empty', $with( array( wt_issue( 'warning', 'x', 'p', array( 'code' => array( 'color-contrast' ) ) ) ) )['issues'][0]['code'], '' );

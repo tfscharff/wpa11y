@@ -57,6 +57,39 @@ $setup( array( 'wpa11y_notify' => 'email', 'wpa11y_notify_email' => '' ) );
 $post_scan( $post_body( $new ) );
 check( 'email: no address, nothing sent', count( $GLOBALS['wt_mail'] ), 0 );
 
+// A warning dismissed earlier that drops out of one scan and comes back is not news.
+$setup( array( 'wpa11y_notify' => 'email', 'wpa11y_notify_email' => 'web@example.edu' ) );
+wpa11y_save_result( 10, wt_result( $old ) );
+wpa11y_add_dismissal( 10, 'color-contrast', '#a', 'fine', 5 );
+$post_scan( $post_body( array() ) );
+$post_scan( $post_body( $old ) );
+check( 'email: a returning dismissed warning sends nothing', count( $GLOBALS['wt_mail'] ), 0 );
+
+// CURRENT BEHAVIOUR (open question, see report): issues are matched by rule and element only, so a
+// warning that becomes an error on the same element is not reported as new.
+$setup( array( 'wpa11y_notify' => 'email', 'wpa11y_notify_email' => 'web@example.edu' ) );
+wpa11y_save_result( 10, wt_result( $old ) );
+$post_scan( $post_body( array( wt_issue( 'error', 'color-contrast', '#a' ) ) ) );
+check( 'email: warning turned error on the same element sends nothing', count( $GLOBALS['wt_mail'] ), 0 );
+
+// CURRENT BEHAVIOUR (suspected bug): the first-scan guard only looks for a missing result. A page
+// whose only stored result is a failure (it never scanned successfully) gets every issue emailed
+// during the site's first full scan.
+$setup( array( 'wpa11y_notify' => 'email', 'wpa11y_notify_email' => 'web@example.edu', 'wpa11y_last_full_scan' => '' ) );
+$post_scan( $post_body( array(), array( 'error' => 'Cloudflare challenge page (HTTP 429)' ) ) );
+$post_scan( $post_body( $new ) );
+check( 'email: first full scan after a failed first attempt still emails', count( $GLOBALS['wt_mail'] ), 1 );
+
+// One address is used even when wpshare is active.
+$setup( array( 'wpa11y_notify' => 'email', 'wpa11y_notify_email' => 'web@example.edu' ) );
+$GLOBALS['wt_listen']['wpshare_notify'] = true;
+$post_scan( $post_body( $new ) );
+check( 'email: one-address mode mails directly, wpshare not called', array( count( $GLOBALS['wt_mail'] ), $GLOBALS['wt_actions'] ), array( 1, array() ) );
+$setup( array( 'wpa11y_notify' => 'email', 'wpa11y_notify_email' => 'web@example.edu' ) );
+wpa11y_save_result( 10, wt_result( array() ) );
+$post_scan( $post_body( array( wt_issue( 'error', 'image-alt', 'img' ) ) ) );
+check( 'email: singular subject', $GLOBALS['wt_mail'][0]['subject'], '[Library & Archives] Accessibility: 1 new issue on Floor & Maps' );
+
 // Page owners via wpshare.
 $setup( array( 'wpa11y_notify' => 'wpshare', 'wpa11y_notify_email' => 'web@example.edu' ) );
 $post_scan( $post_body( $new ) );
@@ -83,6 +116,12 @@ list( $out, $errors ) = wpa11y_clean_settings( $base + array( 'notify' => 'wpsha
 check( 'settings: owners mode needs no address', array( $out['wpa11y_notify'], $errors ), array( 'wpshare', array() ) );
 list( $out, $errors ) = wpa11y_clean_settings( $base + array( 'notify' => 'everyone' ) );
 check( 'settings: unknown mode is off', $out['wpa11y_notify'], 'off' );
+list( $out, $errors ) = wpa11y_clean_settings( $base + array( 'notify' => array( 'email' ) ) );
+check( 'settings: non-string mode is off', $out['wpa11y_notify'], 'off' );
+list( $out, $errors ) = wpa11y_clean_settings( $base + array( 'notify' => 'wpshare', 'notify_email' => 'nope' ) );
+check( 'settings: owners mode saved, bad address refused', array( $out['wpa11y_notify'], isset( $out['wpa11y_notify_email'] ), $errors ), array( 'wpshare', false, array( 'The notification address is not a valid email address.' ) ) );
+list( $out, $errors ) = wpa11y_clean_settings( array() );
+check( 'settings: empty form saves only safe defaults', array( $out, count( $errors ) ), array( array( 'wpa11y_notify_email' => '', 'wpa11y_notify' => 'off' ), 3 ) );
 
 $setup( array( 'wpa11y_notify' => 'wpshare' ) );
 $html = wpa11y_render_settings( '', array(), '' );

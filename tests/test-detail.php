@@ -105,3 +105,48 @@ check( 'dismiss all: one row per item, already-dismissed skipped', count( wpa11y
 check( 'dismiss all: note on each new row, old note kept', array_column( wpa11y_rows(), 'note', 'selector' ), array( '#b' => 'halo labels, checked by eye', '#a' => 'halo labels, checked by eye', '#c' => 'earlier' ) );
 check( 'dismiss all: undo stays per item', substr_count( $res['html'], 'wpa11y-undo' ), 3 );
 check( 'dismiss all: draft refused', wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 11, 'keys' => array( $k( '#a' ) ) ) ) )->get_error_code(), 'wpa11y_bad_post' );
+check( 'dismiss all: more keys than the issue cap refused', wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 10, 'keys' => array_fill( 0, 1001, $k( '#a' ) ) ) ) )->get_error_code(), 'wpa11y_bad_keys' );
+wt_reset( array( 'posts' => array( array( 'ID' => 10 ) ) ) );
+wpa11y_save_result( 10, wt_result( $three ) );
+wpa11y_rest_dismiss_group( new WP_REST_Request( array( 'post' => 10, 'keys' => array( $k( '#a' ), $k( '#a' ), $k( '#b' ) ) ) ) );
+check( 'dismiss all: a repeated key gives one row', count( wpa11y_rows() ), 2 );
+
+// Notes: clipped, and invalid UTF-8 dropped rather than stored.
+check( 'note: clipped to 1000 characters', wpa11y_clean_note( str_repeat( 'é', 1200 ) ), str_repeat( 'é', 1000 ) );
+check( 'note: invalid UTF-8 dropped', wpa11y_clean_note( "ok \xC3\x28" ), '' );
+check( 'note: missing note is empty', wpa11y_clean_note( null ), '' );
+
+check( 'status: draft refused', wpa11y_rest_status( new WP_REST_Request( array( 'post' => 11 ) ) )->get_error_code(), 'wpa11y_bad_post' );
+check( 'status: missing post refused', wpa11y_rest_status( new WP_REST_Request() )->get_error_code(), 'wpa11y_bad_post' );
+
+// Everything the scanner sends is escaped where the detail shows it (admin.js inserts it as HTML).
+wt_reset( array( 'posts' => array( array( 'ID' => 10 ) ) ) );
+$hostile             = wt_result( array( wt_issue( 'warning', 'x"><script>alert(1)</script>', '#a', array(
+	'message'  => '<img src=x onerror=alert(2)>',
+	'context'  => '<script>alert(3)</script>',
+	'help_url' => 'https://example.edu/"><script>alert(4)</script>',
+) ) ) );
+$hostile['error']    = 'Timeout <img src=x onerror=alert(5)>';
+$hostile['error_at'] = '2026-09-30T11:00:00Z';
+wpa11y_save_result( 10, $hostile );
+$html = wpa11y_render_detail( 10 );
+check( 'escaping: scanner text never becomes markup', array( strpos( $html, '<script' ), strpos( $html, '<img' ), strpos( $html, 'alert(4)</script>' ) ), array( false, false, false ) );
+check( 'escaping: and is still shown', array( strpos( $html, '&lt;script&gt;alert(3)&lt;/script&gt;' ) !== false, strpos( $html, 'failed: Timeout &lt;img src=x onerror=alert(5)&gt;' ) !== false ), array( true, true ) );
+check( 'escaping: group id keeps only safe characters', strpos( $html, 'id="wpa11y-g-warnings-xscriptalert1script"' ) !== false, true );
+
+// Admin screens show nothing to users without the capability.
+$screen = function ( $fn ) {
+	ob_start();
+	$fn();
+	return ob_get_clean();
+};
+wt_reset( array( 'posts' => array( array( 'ID' => 10 ) ) ) );
+$GLOBALS['wt_caps'] = array();
+check( 'screens: overview, detail and log need edit_pages', array( $screen( 'wpa11y_page_overview' ), $screen( 'wpa11y_page_log' ) ), array( '', '' ) );
+$GLOBALS['wt_caps'] = array( 'edit_pages' => true );
+set_transient( 'wpa11y_new_secret_5', 'abc123' );
+check( 'screens: settings need manage_options', $screen( 'wpa11y_page_settings' ), '' );
+check( 'screens: an editor visiting settings does not use up the new secret', get_transient( 'wpa11y_new_secret_5' ), 'abc123' );
+$GLOBALS['wt_caps'] = array( 'edit_pages' => true, 'manage_options' => true );
+check( 'screens: admin sees the new secret', strpos( $screen( 'wpa11y_page_settings' ), 'value="abc123"' ) !== false, true );
+check( 'screens: the new secret is shown once', array( get_transient( 'wpa11y_new_secret_5' ), strpos( $screen( 'wpa11y_page_settings' ), 'abc123' ) ), array( false, false ) );
