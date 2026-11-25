@@ -61,7 +61,7 @@ release via `bin/release.sh` (see README "Development").
    None runs pa11y/HTML_CodeSniffer with this site's tuning. Say plainly if one of them already
    covers the need.
 
-## Conventions (from the sibling plugins wphours, wprooms, wpmeet, in `C:\Users\thoma\Documents\`)
+## Conventions (from the sibling plugins wphours, wprooms, wpmeet, in `C:\Users\thoma\repos\`)
 
 - Plain PHP and vanilla JS. No build step unless the design truly needs one; say so if it does. The
   siblings are single-file plugins with ES5-style JS.
